@@ -1,0 +1,79 @@
+version: 2
+project_name: agentos
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/agentos
+    binary: agentos
+    ldflags:
+      - -X github.com/kazyamaz200/agentos/internal/cli.Version={{ .Version }}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    goarm:
+      - 7
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ .Version }}-next"
+
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: kazyamaz200
+    name: agentos
+  draft: true
+  prerelease: auto
+
+brews:
+  - name: agentos
+    repository:
+      owner: kazyamaz200
+      name: homebrew-tap
+    directory: Formula
+    homepage: "https://github.com/kazyamaz200/agentos"
+    description: "AgentOS - A coding agent execution platform"
+    license: "Apache-2.0"
+    test: |
+      system "#{bin}/agentos version"
+    install: |
+      bin.install "agentos"
+
+dockers:
+  - image_templates:
+      - "ghcr.io/kazyamaz200/agentos:{{ .Version }}"
+      - "ghcr.io/kazyamaz200/agentos:latest"
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--label=org.opencontainers.image.title=agentos"
+      - "--label=org.opencontainers.image.description=AgentOS coding agent execution platform"
+      - "--label=org.opencontainers.image.source=https://github.com/kazyamaz200/agentos"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
