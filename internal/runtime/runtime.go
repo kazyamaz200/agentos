@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type Planner interface {
+	Plan(ctx *RunContext) (*Plan, error)
+}
+
 type Runtime struct {
 	LLM       llm.LLMClient
 	Registry  *tools.Registry
@@ -28,9 +33,10 @@ type Runtime struct {
 	Logger    *state.Logger
 	Profile   *profile.Profile
 	Config    *Config
+	Planner   Planner
 }
 
-func NewRuntime(llmClient llm.LLMClient, prof *profile.Profile, workspace *sandbox.Workspace, cfg *Config) *Runtime {
+func NewRuntime(llmClient llm.LLMClient, prof *profile.Profile, workspace *sandbox.Workspace, cfg *Config, planner Planner) *Runtime {
 	registry := tools.NewRegistry()
 	policy := safety.NewCommandPolicy(prof.Tools.DenyCommands)
 
@@ -57,6 +63,7 @@ func NewRuntime(llmClient llm.LLMClient, prof *profile.Profile, workspace *sandb
 		Logger:    logger,
 		Profile:   prof,
 		Config:    cfg,
+		Planner:   planner,
 	}
 }
 
@@ -91,7 +98,8 @@ func (r *Runtime) Run(ctx context.Context, tk *task.Task) error {
 	record.Status = state.RunStatusPlanning
 	r.Store.Save(record)
 
-	plan, err := r.createPlan(ctx, tk)
+	rctx := NewRunContext(ctx, tk, r)
+	plan, err := r.Planner.Plan(rctx)
 	if err != nil {
 		record.Status = state.RunStatusFailed
 		record.Error = err.Error()
@@ -193,53 +201,9 @@ func (r *Runtime) Run(ctx context.Context, tk *task.Task) error {
 		"retries":  retryCount,
 	})
 
-	fmt.Printf("\nRun completed in %s\n", duration.Round(time.Second))
-	fmt.Printf("Results saved to %s\n", r.Workspace.RunPath())
+	slog.Info("run completed", "duration", duration.Round(time.Second), "path", r.Workspace.RunPath())
 
 	return nil
-}
-
-func (r *Runtime) createPlan(ctx context.Context, tk *task.Task) (*Plan, error) {
-	r.Logger.Log("info", "planner", "creating plan", nil)
-
-	systemMsg := llm.Message{Role: llm.RoleSystem, Content: llm.SystemPromptPlanner}
-	userMsg := llm.Message{
-		Role: llm.RoleUser,
-		Content: fmt.Sprintf(`Task: %s
-Description:
-%s
-
-Repository: %s
-Base branch: %s
-
-Create a plan to implement this task.`, tk.Title, tk.Description, tk.Repo, tk.BaseBranch),
-	}
-
-	resp, err := r.LLM.Chat(ctx, llm.ChatRequest{
-		Model:       r.LLM.ModelName(),
-		Messages:    []llm.Message{systemMsg, userMsg},
-		Temperature: r.Profile.LLM.Temperature,
-		MaxTokens:   r.Profile.LLM.MaxTokens,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("LLM plan request: %w", err)
-	}
-
-	r.Logger.LogLLM(
-		llm.ChatRequest{Messages: []llm.Message{systemMsg, userMsg}},
-		resp,
-		r.LLM.ModelName(),
-		0,
-		getPromptTokens(resp),
-		getCompletionTokens(resp),
-	)
-
-	plan, err := ParsePlan(resp)
-	if err != nil {
-		return nil, fmt.Errorf("parse plan: %w", err)
-	}
-
-	return plan, nil
 }
 
 func (r *Runtime) executePlan(ctx context.Context, tk *task.Task, plan *Plan) (*ExecutionResult, error) {

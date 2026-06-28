@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/kazyamaz200/agentos/internal/agent"
 	agentosgh "github.com/kazyamaz200/agentos/internal/github"
 	"github.com/kazyamaz200/agentos/internal/llm"
 	"github.com/kazyamaz200/agentos/internal/profile"
@@ -93,7 +94,8 @@ func runTask() error {
 		Verbose: verbose,
 	}
 
-	rt := runtime.NewRuntime(llmClient, prof, ws, cfg)
+	planner := agent.NewPlanner(llmClient)
+	rt := runtime.NewRuntime(llmClient, prof, ws, cfg, planner)
 	if err := rt.Run(context.Background(), tk); err != nil {
 		return err
 	}

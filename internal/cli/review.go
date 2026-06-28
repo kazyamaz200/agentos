@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/kazyamaz200/agentos/internal/agent"
 	"github.com/kazyamaz200/agentos/internal/llm"
 	"github.com/kazyamaz200/agentos/internal/profile"
 	"github.com/kazyamaz200/agentos/internal/runtime"
@@ -57,7 +58,8 @@ func runReview() error {
 	ws := sandbox.NewWorkspace(reviewRepo)
 	cfg := &runtime.Config{Verbose: true}
 
-	rt := runtime.NewRuntime(llmClient, prof, ws, cfg)
+	planner := agent.NewPlanner(llmClient)
+	rt := runtime.NewRuntime(llmClient, prof, ws, cfg, planner)
 
 	mockTask := &task.Task{
 		ID:   "review-" + reviewRepo,
