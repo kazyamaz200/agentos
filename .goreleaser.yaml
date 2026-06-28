@@ -50,30 +50,5 @@ release:
   github:
     owner: kazyamaz200
     name: agentos
-  draft: true
+  draft: false
   prerelease: auto
-
-brews:
-  - name: agentos
-    repository:
-      owner: kazyamaz200
-      name: homebrew-tap
-    directory: Formula
-    homepage: "https://github.com/kazyamaz200/agentos"
-    description: "AgentOS - A coding agent execution platform"
-    license: "Apache-2.0"
-    test: |
-      system "#{bin}/agentos version"
-    install: |
-      bin.install "agentos"
-
-dockers:
-  - image_templates:
-      - "ghcr.io/kazyamaz200/agentos:{{ .Version }}"
-      - "ghcr.io/kazyamaz200/agentos:latest"
-    dockerfile: Dockerfile
-    build_flag_templates:
-      - "--label=org.opencontainers.image.title=agentos"
-      - "--label=org.opencontainers.image.description=AgentOS coding agent execution platform"
-      - "--label=org.opencontainers.image.source=https://github.com/kazyamaz200/agentos"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
