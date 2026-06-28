@@ -1,0 +1,9 @@
+id: "task-001"
+type: "issue_to_patch"
+repo: "./examples/sample-repo"
+base_branch: "main"
+branch: "agent/task-001"
+title: "Go APIのバリデーションを追加"
+description: |
+  users APIに入力バリデーションを追加してください。
+  既存テストを壊さないこと。

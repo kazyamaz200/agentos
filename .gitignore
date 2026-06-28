@@ -1,0 +1,35 @@
+# Binaries
+agentos
+agentos.exe
+*.test
+*.out
+
+# AgentOS runtime data
+.agentos/
+
+# Environment files
+.env
+.env.*
+
+# Secrets
+*.pem
+id_rsa*
+id_ed25519*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies
+vendor/
+
+# Build output
+dist/
+build/

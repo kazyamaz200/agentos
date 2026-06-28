@@ -1,0 +1,36 @@
+name: "ci-fixer"
+role: "CI configuration fix agent"
+
+llm:
+  provider: "litellm"
+  model: "coder"
+  temperature: 0.1
+  max_tokens: 8192
+
+tools:
+  allow:
+    - read_file
+    - write_file
+    - search
+    - shell
+    - git
+  deny_commands:
+    - "rm -rf"
+    - "sudo"
+    - "docker run --privileged"
+    - "curl"
+    - "wget"
+
+commands:
+  test: ""
+  lint: ""
+  build: ""
+
+limits:
+  max_iterations: 5
+  max_retries: 2
+  max_changed_files: 10
+  max_runtime_minutes: 15
+
+output:
+  mode: "patch"

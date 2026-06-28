@@ -1,0 +1,39 @@
+name: "go-backend-agent"
+role: "Go backend coding agent"
+
+llm:
+  provider: "litellm"
+  model: "coder"
+  temperature: 0.2
+  max_tokens: 8192
+
+tools:
+  allow:
+    - read_file
+    - write_file
+    - search
+    - shell
+    - git
+    - test
+  deny_commands:
+    - "rm -rf"
+    - "sudo"
+    - "docker run --privileged"
+    - "curl"
+    - "wget"
+    - "scp"
+    - "ssh"
+
+commands:
+  test: "go test ./..."
+  lint: "go vet ./..."
+  build: "go build ./..."
+
+limits:
+  max_iterations: 8
+  max_retries: 3
+  max_changed_files: 20
+  max_runtime_minutes: 30
+
+output:
+  mode: "patch"

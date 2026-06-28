@@ -1,0 +1,32 @@
+name: "go-reviewer"
+role: "Go code reviewer"
+
+llm:
+  provider: "litellm"
+  model: "coder"
+  temperature: 0.1
+  max_tokens: 4096
+
+tools:
+  allow:
+    - read_file
+    - search
+    - git
+  deny_commands:
+    - "rm -rf"
+    - "sudo"
+    - "curl"
+    - "wget"
+
+commands:
+  test: ""
+  lint: ""
+
+limits:
+  max_iterations: 1
+  max_retries: 1
+  max_changed_files: 50
+  max_runtime_minutes: 10
+
+output:
+  mode: "summary"
