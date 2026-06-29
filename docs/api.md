@@ -102,7 +102,20 @@ Search across memory, guidelines, and past PRs.
 
 ## Authentication
 
-The web UI has no built-in authentication. In production, use a reverse proxy (e.g., nginx, Caddy) with HTTPS and basic authentication.
+Authentication is optional. Local development can run without login. Production
+deployments can require GitHub OAuth sessions by setting
+`AGENTOS_AUTH_REQUIRED=true` or Helm `auth.required=true`.
+
+```
+GET /api/auth/session
+GET /auth/login
+GET /auth/callback
+GET /auth/logout
+```
+
+When authentication is enabled, work-triggering APIs require a valid signed
+session cookie. Repository cloning and GitHub API operations still use the
+server-side `GITHUB_TOKEN` in v1.0.
 
 ## Rate Limiting
 
