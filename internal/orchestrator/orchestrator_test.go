@@ -94,6 +94,24 @@ func TestExecute_EmptyPlan(t *testing.T) {
 	}
 }
 
+func TestPlan_EmptyLLMContent(t *testing.T) {
+	t.Parallel()
+
+	o := NewOrchestrator(
+		llm.NewMockLLMClient([]llm.ChatResponse{{
+			Choices: []llm.Choice{{Message: llm.Message{Role: llm.RoleAssistant}}},
+		}}),
+		sandbox.NewLocalSandbox(t.TempDir()),
+		map[string]runtime.Agent{},
+		&runtime.Config{},
+	)
+
+	_, err := o.Plan(context.Background(), "do work")
+	if err == nil || !strings.Contains(err.Error(), "empty LLM plan content") {
+		t.Fatalf("Plan() error = %v, want empty content error", err)
+	}
+}
+
 func TestExecuteWithObserver_EmitsSubtaskEvents(t *testing.T) {
 	repo := t.TempDir()
 	t.Setenv("AGENTOS_HOME", filepath.Join(t.TempDir(), "agentos-home"))
