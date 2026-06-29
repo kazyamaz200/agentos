@@ -273,6 +273,62 @@ func TestServer_GitHub_Checks_ValidRepo(t *testing.T) {
 	testGitHubEndpoint(t, "/api/github/checks?repo=kazyamaz200/agentos")
 }
 
+func TestServer_GitHub_EmptyListsReturnArrays(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(r.URL.Path, "/issues"):
+			_, _ = w.Write([]byte(`[]`))
+		case strings.Contains(r.URL.Path, "/pulls"):
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer api.Close()
+	t.Setenv("GITHUB_API_URL", api.URL)
+
+	s := NewServer(0)
+	for _, path := range []string{
+		"/api/github/issues?repo=owner/repo",
+		"/api/github/pulls?repo=owner/repo",
+	} {
+		w := serveRequest(s, "GET", path, nil)
+		assertStatus(t, w.Code, http.StatusOK)
+		if body := strings.TrimSpace(w.Body.String()); body != "[]" {
+			t.Fatalf("%s body = %q, want []", path, body)
+		}
+	}
+}
+
+func TestServer_GitHub_ChecksReturnCheckRuns(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/commits/main/check-runs") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"check_runs":[{"id":1,"name":"build","status":"completed","conclusion":"success","html_url":"https://example.test/check/1"}]}`))
+	}))
+	defer api.Close()
+	t.Setenv("GITHUB_API_URL", api.URL)
+
+	s := NewServer(0)
+	w := serveRequest(s, "GET", "/api/github/checks?repo=owner/repo&ref=main", nil)
+	assertStatus(t, w.Code, http.StatusOK)
+
+	var runs []map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &runs); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("got %d runs, want 1", len(runs))
+	}
+	if runs[0]["name"] != "build" || runs[0]["id"].(float64) != 1 {
+		t.Fatalf("unexpected check run: %+v", runs[0])
+	}
+}
+
 func TestServer_GitHub_UnknownResource(t *testing.T) {
 	t.Parallel()
 	s := NewServer(0)
