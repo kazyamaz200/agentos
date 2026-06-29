@@ -94,7 +94,7 @@ func TestExecute_EmptyPlan(t *testing.T) {
 	}
 }
 
-func TestPlan_EmptyLLMContent(t *testing.T) {
+func TestPlan_EmptyLLMContentUsesFallbackPlan(t *testing.T) {
 	t.Parallel()
 
 	o := NewOrchestrator(
@@ -102,13 +102,27 @@ func TestPlan_EmptyLLMContent(t *testing.T) {
 			Choices: []llm.Choice{{Message: llm.Message{Role: llm.RoleAssistant}}},
 		}}),
 		sandbox.NewLocalSandbox(t.TempDir()),
-		map[string]runtime.Agent{},
+		map[string]runtime.Agent{
+			"go-backend": &recordingAgent{name: "go-backend"},
+			"docs":       &recordingAgent{name: "docs"},
+			"ci-fixer":   &recordingAgent{name: "ci-fixer"},
+			"reviewer":   &recordingAgent{name: "reviewer"},
+		},
 		&runtime.Config{},
 	)
 
-	_, err := o.Plan(context.Background(), "do work")
-	if err == nil || !strings.Contains(err.Error(), "empty LLM plan content") {
-		t.Fatalf("Plan() error = %v, want empty content error", err)
+	plan, err := o.Plan(context.Background(), "do work")
+	if err != nil {
+		t.Fatalf("Plan() error = %v", err)
+	}
+	if len(plan.Subtasks) != 4 {
+		t.Fatalf("got %d subtasks, want 4", len(plan.Subtasks))
+	}
+	if plan.Subtasks[2].AgentName != "ci-fixer" || len(plan.Subtasks[2].Deps) != 1 || plan.Subtasks[2].Deps[0] != "step-1" {
+		t.Fatalf("ci-fixer fallback subtask = %+v, want dependency on step-1", plan.Subtasks[2])
+	}
+	if plan.Subtasks[3].AgentName != "reviewer" || len(plan.Subtasks[3].Deps) != 3 {
+		t.Fatalf("reviewer fallback subtask = %+v, want dependencies on implementation, docs, and CI", plan.Subtasks[3])
 	}
 }
 
@@ -312,6 +326,7 @@ func TestSubtaskResult_Defaults(t *testing.T) {
 }
 
 type recordingAgent struct {
+	name          string
 	taskRepo      string
 	baseBranch    string
 	profileName   string
@@ -322,6 +337,9 @@ type recordingAgent struct {
 }
 
 func (a *recordingAgent) Name() string {
+	if a.name != "" {
+		return a.name
+	}
 	return "test-agent"
 }
 
