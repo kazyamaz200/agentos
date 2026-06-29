@@ -328,6 +328,9 @@ func (s *Server) handleGitHub(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		if issues == nil {
+			issues = []agentosgh.Issue{}
+		}
 		_ = json.NewEncoder(w).Encode(issues) //nolint:errcheck // best-effort response
 
 	case "pulls":
@@ -337,6 +340,9 @@ func (s *Server) handleGitHub(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		if prs == nil {
+			prs = []agentosgh.PullRequest{}
+		}
 		_ = json.NewEncoder(w).Encode(prs) //nolint:errcheck // best-effort response
 
 	case "checks":
@@ -344,12 +350,15 @@ func (s *Server) handleGitHub(w http.ResponseWriter, r *http.Request) {
 		if ref == "" {
 			ref = "main"
 		}
-		suites, err := client.GetCheckSuites(ref)
+		runs, err := client.GetCheckRuns(ref)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(suites) //nolint:errcheck // best-effort response
+		if runs == nil {
+			runs = []agentosgh.CheckRun{}
+		}
+		_ = json.NewEncoder(w).Encode(runs) //nolint:errcheck // best-effort response
 
 	default:
 		http.Error(w, "unknown github resource: "+path, http.StatusNotFound)

@@ -51,7 +51,12 @@ pre{background:#0d1117;padding:12px;border-radius:6px;overflow-x:auto;font-size:
 .form-group textarea{min-height:80px;resize:vertical}
 .search-box{display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap}
 .search-box input{flex:1 1 220px;min-width:0;padding:8px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:13px}
-.search-box select{flex:0 1 180px;min-width:140px;padding:8px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:13px}
+.search-box select{flex:0 1 180px;min-width:140px;padding:8px 34px 8px 10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:13px;appearance:none;background-image:linear-gradient(45deg,transparent 50%,#8b949e 50%),linear-gradient(135deg,#8b949e 50%,transparent 50%);background-position:calc(100% - 16px) 15px,calc(100% - 10px) 15px;background-size:6px 6px,6px 6px;background-repeat:no-repeat}
+.github-controls{display:grid;grid-template-columns:minmax(260px,1fr) minmax(150px,190px) minmax(120px,160px) auto;gap:8px;align-items:center;margin-bottom:12px}
+.github-controls input,.github-controls select{width:100%;min-width:0;padding:8px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:13px;min-height:36px}
+.github-controls select{padding-right:34px;appearance:none;background-image:linear-gradient(45deg,transparent 50%,#8b949e 50%),linear-gradient(135deg,#8b949e 50%,transparent 50%);background-position:calc(100% - 16px) 15px,calc(100% - 10px) 15px;background-size:6px 6px,6px 6px;background-repeat:no-repeat}
+.github-ref{display:none}
+.github-ref.visible{display:block}
 .agent-card{border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:8px}
 .agent-card h3{font-size:14px;color:#f0f6fc;margin-bottom:4px}
 .agent-card p{font-size:12px;color:#8b949e}
@@ -68,6 +73,7 @@ pre{background:#0d1117;padding:12px;border-radius:6px;overflow-x:auto;font-size:
   .stat-value{font-size:24px}
   .search-box{align-items:stretch}
   .search-box input,.search-box select,.search-box .btn{width:100%;flex:1 1 100%}
+  .github-controls{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -134,16 +140,17 @@ pre{background:#0d1117;padding:12px;border-radius:6px;overflow-x:auto;font-size:
 <div id="page-github" class="page">
   <div class="card">
     <h2>GitHub Integration</h2>
-    <div class="search-box">
+    <div class="github-controls">
       <input type="text" id="ghRepo" placeholder="owner/repo" value="" onkeydown="if(event.key==='Enter')loadGitHub()">
       <select id="ghTab" onchange="loadGitHub()">
         <option value="issues">Issues</option>
         <option value="pulls">Pull Requests</option>
         <option value="checks">CI Checks</option>
       </select>
+      <input class="github-ref" type="text" id="ghRef" placeholder="ref" value="main" onkeydown="if(event.key==='Enter')loadGitHub()">
       <button class="btn" onclick="loadGitHub()">Load</button>
     </div>
-    <div id="githubContent"><p style="color:#8b949e;font-size:13px">Enter a repository to view issues, PRs, or CI checks.</p></div>
+    <div id="githubContent"><p class="empty">Enter a repository to view issues, PRs, or CI checks.</p></div>
   </div>
 </div>
 
@@ -211,6 +218,7 @@ function showPage(name) {
   if (name === 'dashboard') loadDashboard();
   if (name === 'runs') loadRuns();
   if (name === 'agents') loadAgents();
+  if (name === 'github') toggleGitHubRef();
   if (name === 'new-run') loadAgentSelect();
   if (name === 'orchestrate') loadOrchAgentCheckboxes();
 }
@@ -408,34 +416,73 @@ async function submitRun(e) {
 
 async function loadGitHub() {
   const repo = document.getElementById('ghRepo').value.trim();
-  if (!repo) return;
+  toggleGitHubRef();
+  if (!repo) {
+    document.getElementById('githubContent').innerHTML = '<p class="empty">Enter a repository to view issues, PRs, or CI checks.</p>';
+    return;
+  }
   const tab = document.getElementById('ghTab').value;
+  const ref = document.getElementById('ghRef').value.trim() || 'main';
   const div = document.getElementById('githubContent');
   div.innerHTML = '<p style="color:#8b949e">Loading...</p>';
 
   try {
-    const data = await api('/api/github/' + tab + '?repo=' + encodeURIComponent(repo));
+    const query = new URLSearchParams({repo});
+    if (tab === 'checks') query.set('ref', ref);
+    const payload = await api('/api/github/' + tab + '?' + query.toString());
+    const data = normalizeGitHubPayload(tab, payload);
     if (data.length === 0) {
-      div.innerHTML = '<p style="color:#8b949e">No ' + tab + ' found for ' + escape(repo) + '.</p>';
+      div.innerHTML = '<p class="empty">No ' + githubTabLabel(tab).toLowerCase() + ' found for ' + escape(repo) + (tab === 'checks' ? ' at ' + escape(ref) : '') + '.</p>';
       return;
     }
 
     if (tab === 'issues') {
       div.innerHTML = '<table><thead><tr><th>#</th><th>Title</th><th>State</th><th>Labels</th></tr></thead><tbody>' +
-        data.map(i => '<tr><td>#' + i.number + '</td><td>' + escape(i.title) + '</td><td>' + statusSpan(i.state) + '</td><td>' + (i.labels||[]).map(l => '<span class="tag">'+escape(l.name)+'</span>').join('') + '</td></tr>').join('') +
+        data.map(i => '<tr><td>#' + escape(i.number) + '</td><td>' + linkOrText(i.html_url, i.title) + '</td><td>' + statusSpan(i.state) + '</td><td>' + (i.labels||[]).map(l => '<span class="tag">'+escape(l.name)+'</span>').join('') + '</td></tr>').join('') +
         '</tbody></table>';
     } else if (tab === 'pulls') {
       div.innerHTML = '<table><thead><tr><th>#</th><th>Title</th><th>State</th><th>Branch</th></tr></thead><tbody>' +
-        data.map(p => '<tr><td>#' + p.number + '</td><td>' + escape(p.title) + '</td><td>' + statusSpan(p.state) + '</td><td>' + escape(p.head && (p.head.label || '')) + '</td></tr>').join('') +
+        data.map(p => '<tr><td>#' + escape(p.number) + '</td><td>' + linkOrText(p.html_url, p.title) + '</td><td>' + statusSpan(p.state) + '</td><td>' + escape(p.head || '-') + ' → ' + escape(p.base || '-') + '</td></tr>').join('') +
         '</tbody></table>';
     } else if (tab === 'checks') {
-      div.innerHTML = '<table><thead><tr><th>Name</th><th>Status</th><th>Conclusion</th></tr></thead><tbody>' +
-        data.map(c => '<tr><td>' + escape(c.check_runs ? c.check_runs[0] && c.check_runs[0].name : c.name || '') + '</td><td>' + statusSpan(c.status || '') + '</td><td>' + statusSpan(c.conclusion || (c.status === 'completed' ? 'success' : 'pending')) + '</td></tr>').join('') +
+      div.innerHTML = '<table><thead><tr><th>Name</th><th>Status</th><th>Conclusion</th><th>Completed</th></tr></thead><tbody>' +
+        data.map(c => '<tr><td>' + linkOrText(c.html_url, c.name || (c.output && c.output.title) || 'Unnamed check') + '</td><td>' + statusSpan(c.status || 'queued') + '</td><td>' + statusSpan(c.conclusion || (c.status === 'completed' ? 'success' : 'pending')) + '</td><td>' + escape(formatTime(c.completed_at)) + '</td></tr>').join('') +
         '</tbody></table>';
     }
   } catch(e) {
     div.innerHTML = '<p style="color:#f85149">Error: ' + escape(e.message) + '</p>';
   }
+}
+
+function normalizeGitHubPayload(tab, payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return [];
+  if (tab === 'checks' && Array.isArray(payload.check_runs)) return payload.check_runs;
+  if (tab === 'checks' && Array.isArray(payload.check_suites)) return payload.check_suites;
+  if (tab === 'issues' && Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
+function githubTabLabel(tab) {
+  return tab === 'pulls' ? 'Pull requests' : tab === 'checks' ? 'CI checks' : 'Issues';
+}
+
+function linkOrText(url, text) {
+  const label = escape(text || '-');
+  return url ? '<a href="' + escape(url) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>' : label;
+}
+
+function formatTime(value) {
+  if (!value || value === '0001-01-01T00:00:00Z') return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString();
+}
+
+function toggleGitHubRef() {
+  const ref = document.getElementById('ghRef');
+  if (!ref) return;
+  ref.classList.toggle('visible', document.getElementById('ghTab').value === 'checks');
 }
 
 async function loadOrchAgentCheckboxes() {
