@@ -471,7 +471,7 @@ func (o *Orchestrator) executeObservedSubtask(ctx context.Context, subtask Subta
 	defer cancel()
 
 	result := o.executeSubtask(runCtx, subtask, sharedCtx)
-	if runCtx.Err() == context.DeadlineExceeded && result.Error == "" {
+	if runCtx.Err() == context.DeadlineExceeded && !result.Success && result.Error == "" {
 		result.Success = false
 		result.Error = fmt.Sprintf("subtask timed out after %s", o.subtaskTimeout)
 	}
