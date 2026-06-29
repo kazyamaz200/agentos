@@ -181,6 +181,7 @@ pr_body.md        # Pull request body draft
 ## Documentation
 
 - [Quick Start](docs/quickstart.md) — Get up and running in 5 minutes
+- [Deployment](docs/deployment.md) — Kubernetes deployment via Helm
 - [Architecture](docs/architecture.md) — System architecture overview
 - [Configuration](docs/configuration.md) — LiteLLM, Qdrant, Docker, MCP, templates
 - [Profiles](docs/profiles.md) — Profile YAML schema reference
