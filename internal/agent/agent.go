@@ -87,7 +87,7 @@ func (a *BaseAgent) Execute(ctx *runtime.RunContext, plan *runtime.Plan) (*runti
 		ctx.Logger.Log("info", "executor", fmt.Sprintf("step %d: %s", step.StepNumber, step.Description), nil) //nolint:errcheck // best-effort log
 
 		stepStart := time.Now()
-		stepResult := a.executeStep(ctx, step)
+		stepResult := a.executeStep(ctx, &step)
 		stepResult.Duration = time.Since(stepStart)
 		result.StepResults = append(result.StepResults, stepResult)
 
@@ -132,7 +132,7 @@ func (a *BaseAgent) Execute(ctx *runtime.RunContext, plan *runtime.Plan) (*runti
 			ctx.Logger.Log("info", "executor", fmt.Sprintf("retry step %d: %s", step.StepNumber, step.Description), nil) //nolint:errcheck // best-effort log
 
 			stepStart := time.Now()
-			stepResult := a.executeStep(ctx, step)
+			stepResult := a.executeStep(ctx, &step)
 			stepResult.Duration = time.Since(stepStart)
 			result.StepResults = append(result.StepResults, stepResult)
 			ctx.Logger.LogTool(step.Action, step, stepResult, stepResult.Duration) //nolint:errcheck // best-effort log
@@ -173,7 +173,7 @@ func (a *BaseAgent) Execute(ctx *runtime.RunContext, plan *runtime.Plan) (*runti
 	return result, nil
 }
 
-func (a *BaseAgent) executeStep(ctx *runtime.RunContext, step runtime.Step) runtime.StepResult {
+func (a *BaseAgent) executeStep(ctx *runtime.RunContext, step *runtime.Step) runtime.StepResult {
 	stepResult := runtime.StepResult{
 		StepNumber: step.StepNumber,
 		Action:     step.Action,
@@ -202,7 +202,7 @@ func (a *BaseAgent) executeStep(ctx *runtime.RunContext, step runtime.Step) runt
 	}
 }
 
-func (a *BaseAgent) planCodingAction(ctx *runtime.RunContext, step runtime.Step) (*codingAction, error) {
+func (a *BaseAgent) planCodingAction(ctx *runtime.RunContext, step *runtime.Step) (*codingAction, error) {
 	stepJSON, _ := json.Marshal(step)
 	resp, err := a.llm.Chat(ctx.Context, llm.ChatRequest{
 		Model: a.llm.ModelName(),
