@@ -19,8 +19,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/kazyamaz200/agentos/internal/agent"
 	"github.com/kazyamaz200/agentos/internal/llm"
 	"github.com/kazyamaz200/agentos/internal/profile"
+	"github.com/kazyamaz200/agentos/internal/runtime"
 	"github.com/kazyamaz200/agentos/internal/safety"
 	"github.com/kazyamaz200/agentos/internal/tools"
 )
@@ -156,6 +158,70 @@ func (f *Factory) ListAgents() ([]string, error) {
 		names = append(names, k)
 	}
 	return names, nil
+}
+
+// CreateFromDefinition creates a fully initialized runtime.Agent from a
+// versioned agent Definition. No manual wiring of LLM, tools, or sandbox
+// is required by the caller.
+func (f *Factory) CreateFromDefinition(def *agent.Definition) (runtime.Agent, error) {
+	if def == nil {
+		return nil, fmt.Errorf("definition is nil")
+	}
+
+	llmCfg := llm.DefaultConfig()
+	if def.Spec.LLM.Model != "" {
+		llmCfg.ModelCoder = def.Spec.LLM.Model
+	}
+	llmClient := llm.NewLiteLLMClient(llmCfg)
+
+	registry := tools.NewRegistry()
+	policy := safety.NewCommandPolicy(def.Spec.Safety.DenyCommands)
+
+	allowed := make(map[string]bool)
+	for _, t := range def.Spec.Tools.Allow {
+		allowed[t] = true
+	}
+
+	if allowed["read_file"] || len(def.Spec.Tools.Allow) == 0 {
+		registry.MustRegister(tools.NewReadFileTool(f.workDir))
+	}
+	if allowed["write_file"] || len(def.Spec.Tools.Allow) == 0 {
+		registry.MustRegister(tools.NewWriteFileTool(f.workDir))
+	}
+	if allowed["search"] || len(def.Spec.Tools.Allow) == 0 {
+		registry.MustRegister(tools.NewSearchTool(f.workDir))
+	}
+	if allowed["shell"] || len(def.Spec.Tools.Allow) == 0 {
+		registry.MustRegister(tools.NewShellTool(policy, f.workDir))
+	}
+	if allowed["git"] || len(def.Spec.Tools.Allow) == 0 {
+		registry.MustRegister(tools.NewGitTool(f.workDir))
+	}
+	if allowed["test"] || len(def.Spec.Tools.Allow) == 0 {
+		registry.MustRegister(tools.NewTestTool(f.workDir))
+	}
+
+	agt := agent.NewBaseAgent(def.Metadata.Name, llmClient)
+	return agt, nil
+}
+
+// BuildAgentFromDefinition is a convenience function that loads a Definition
+// from a YAML file, creates a fully initialized runtime.Agent, and returns
+// it along with the LLM client. This is the primary entry point for running
+// agents from definition files.
+func BuildAgentFromDefinition(defPath, workDir string) (runtime.Agent, llm.LLMClient, error) {
+	def, err := agent.LoadDefinition(defPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load definition: %w", err)
+	}
+
+	f := NewFactory(workDir)
+	agt, err := f.CreateFromDefinition(def)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create agent: %w", err)
+	}
+
+	return agt, nil, nil
 }
 
 // AgentRunner executes agents created by the factory.
