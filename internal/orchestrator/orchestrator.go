@@ -214,7 +214,44 @@ Break this task into subtasks and assign each to the most suitable agent.`, task
 	}
 
 	plan.Description = taskDesc
+	enrichSubtasks(&plan, taskDesc)
 	return &plan, nil
+}
+
+func enrichSubtasks(plan *TaskPlan, parentTask string) {
+	if plan == nil {
+		return
+	}
+	for i := range plan.Subtasks {
+		switch plan.Subtasks[i].AgentName {
+		case "go-backend":
+			plan.Subtasks[i].Description = appendContext(plan.Subtasks[i].Description, parentTask,
+				"Concrete go-backend requirements: preserve the exact parent task requirements; create go.mod if missing; create or update main.go; use net/http; implement /healthz with Content-Type application/json and exact body {\"status\":\"ok\"}; implement /; ensure go test ./... and go vet ./... can run.")
+		case "ci-fixer":
+			plan.Subtasks[i].Description = appendContext(plan.Subtasks[i].Description, parentTask,
+				"Concrete ci-fixer requirements: add Go tests for the implemented HTTP handlers; add a GitHub Actions workflow that runs go test ./...; keep validation passing.")
+		case "docs":
+			plan.Subtasks[i].Description = appendContext(plan.Subtasks[i].Description, parentTask,
+				"Concrete docs requirements: update README.md with startup instructions, endpoint descriptions, and test instructions.")
+		case "reviewer":
+			plan.Subtasks[i].Description = appendContext(plan.Subtasks[i].Description, parentTask,
+				"Concrete reviewer requirements: review the final diff against the parent task and summarize release-blocking findings.")
+		default:
+			plan.Subtasks[i].Description = appendContext(plan.Subtasks[i].Description, parentTask, "")
+		}
+	}
+}
+
+func appendContext(description, parentTask, extra string) string {
+	var b strings.Builder
+	b.WriteString(description)
+	if extra != "" {
+		b.WriteString("\n\n")
+		b.WriteString(extra)
+	}
+	b.WriteString("\n\nParent orchestration task:\n")
+	b.WriteString(parentTask)
+	return b.String()
 }
 
 func (o *Orchestrator) fallbackPlan(taskDesc string) *TaskPlan {
