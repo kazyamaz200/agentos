@@ -162,7 +162,9 @@ Output ONLY valid JSON with this structure:
       "dependencies": []
     }
   ]
-}`,
+}
+
+Do not include markdown, explanations, or reasoning. The assistant message content must be the JSON object only.`,
 	}
 
 	agentsInfo := ""
@@ -184,7 +186,7 @@ Break this task into subtasks and assign each to the most suitable agent.`, task
 		Model:       o.llm.ModelName(),
 		Messages:    []llm.Message{systemMsg, userMsg},
 		Temperature: 0.2,
-		MaxTokens:   4096,
+		MaxTokens:   16384,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("LLM plan: %w", err)
@@ -196,6 +198,9 @@ Break this task into subtasks and assign each to the most suitable agent.`, task
 	content = strings.TrimPrefix(content, "```")
 	content = strings.TrimSuffix(content, "```")
 	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, fmt.Errorf("empty LLM plan content")
+	}
 
 	var plan TaskPlan
 	if err := json.Unmarshal([]byte(content), &plan); err != nil {
