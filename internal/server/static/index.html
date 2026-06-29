@@ -181,6 +181,7 @@ let currentOrchestration = null;
 let orchPoll = null;
 let authSession = {authRequired:false,authenticated:true};
 let llmSettings = {defaultPreset:'default',presets:[]};
+let currentDetailPanel = 'dashboard';
 
 function showPage(name) {
   if (!canUseApp()) return;
@@ -429,18 +430,27 @@ function renderOrchestrationDetail() {
     (r.error ? '<p class="error" style="margin-top:10px">' + escape(r.error) + '</p>' : '') +
     '</div>' +
     '<div class="card"><div class="tabs">' +
-    '<button class="active" onclick="showDetailPanel(\'dashboard\')" data-detail-panel="dashboard">Dashboard</button>' +
-    '<button onclick="showDetailPanel(\'runs\')" data-detail-panel="runs">Runs</button>' +
-    '<button onclick="showDetailPanel(\'search\')" data-detail-panel="search">Search</button>' +
-    '<button onclick="showDetailPanel(\'github\')" data-detail-panel="github">GitHub</button>' +
+    detailTabButton('dashboard', 'Dashboard') +
+    detailTabButton('runs', 'Runs') +
+    detailTabButton('search', 'Search') +
+    detailTabButton('github', 'GitHub') +
     '</div></div>' +
-    '<div id="detail-panel-dashboard" class="detail-panel active">' + renderDashboard(r) + '</div>' +
-    '<div id="detail-panel-runs" class="detail-panel">' + renderRuns(r) + '</div>' +
-    '<div id="detail-panel-search" class="detail-panel">' + renderSearch() + '</div>' +
-    '<div id="detail-panel-github" class="detail-panel">' + renderGitHub(r) + '</div>';
+    detailPanel('dashboard', renderDashboard(r)) +
+    detailPanel('runs', renderRuns(r)) +
+    detailPanel('search', renderSearch()) +
+    detailPanel('github', renderGitHub(r));
+}
+
+function detailTabButton(name, label) {
+  return '<button class="' + (currentDetailPanel === name ? 'active' : '') + '" onclick="showDetailPanel(\'' + name + '\')" data-detail-panel="' + name + '">' + label + '</button>';
+}
+
+function detailPanel(name, html) {
+  return '<div id="detail-panel-' + name + '" class="detail-panel ' + (currentDetailPanel === name ? 'active' : '') + '">' + html + '</div>';
 }
 
 function showDetailPanel(name) {
+  currentDetailPanel = name;
   document.querySelectorAll('.detail-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('[data-detail-panel]').forEach(b => b.classList.remove('active'));
   document.getElementById('detail-panel-' + name).classList.add('active');
