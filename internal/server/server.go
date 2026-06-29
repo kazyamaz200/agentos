@@ -327,7 +327,7 @@ func (s *Server) handleGitHub(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(issues) //nolint:errcheck
+		_ = json.NewEncoder(w).Encode(issues) //nolint:errcheck // best-effort response
 
 	case "pulls":
 		state := r.URL.Query().Get("state")
@@ -336,7 +336,7 @@ func (s *Server) handleGitHub(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(prs) //nolint:errcheck
+		_ = json.NewEncoder(w).Encode(prs) //nolint:errcheck // best-effort response
 
 	case "checks":
 		ref := r.URL.Query().Get("ref")
@@ -348,7 +348,7 @@ func (s *Server) handleGitHub(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(suites) //nolint:errcheck
+		_ = json.NewEncoder(w).Encode(suites) //nolint:errcheck // best-effort response
 
 	default:
 		http.Error(w, "unknown github resource: "+path, http.StatusNotFound)
@@ -418,7 +418,7 @@ func (s *Server) handleOrchestrate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	summary := orch.MergeResults(results)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck // best-effort response
 		"plan":    plan,
 		"results": results,
 		"summary": summary,
