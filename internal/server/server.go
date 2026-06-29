@@ -500,12 +500,21 @@ func cloneRemoteRepo(cloneURL, baseBranch string) (string, error) {
 
 	dest := filepath.Join(root, fmt.Sprintf("%s-%s-%s", time.Now().UTC().Format("20060102T150405"), generateID(), safeRepoSlug(cloneURL)))
 	args := gitCloneArgs(cloneURL, baseBranch, dest)
-	cmd := exec.Command("git", args...)
-	out, err := cmd.CombinedOutput()
+	out, err := runGitClone(args)
+	if err != nil && shouldRetryCloneWithoutBranch(string(out)) {
+		_ = os.RemoveAll(dest)
+		args = gitCloneArgs(cloneURL, "", dest)
+		out, err = runGitClone(args)
+	}
 	if err != nil {
 		return "", fmt.Errorf("clone repo: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return dest, nil
+}
+
+func runGitClone(args []string) ([]byte, error) {
+	cmd := exec.Command("git", args...)
+	return cmd.CombinedOutput()
 }
 
 func gitCloneArgs(cloneURL, baseBranch, dest string) []string {
@@ -532,6 +541,11 @@ func defaultBaseBranch(branch string) string {
 		return "main"
 	}
 	return branch
+}
+
+func shouldRetryCloneWithoutBranch(output string) bool {
+	output = strings.ToLower(output)
+	return strings.Contains(output, "remote branch") && strings.Contains(output, "not found")
 }
 
 func safeRepoSlug(repo string) string {
