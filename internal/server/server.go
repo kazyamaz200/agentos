@@ -33,6 +33,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kazyamaz200/agentos/internal/agent"
@@ -436,10 +437,21 @@ type orchestrationRecord struct {
 	Status     string                       `json:"status"`
 	Error      string                       `json:"error,omitempty"`
 	Plan       *orchestrator.TaskPlan       `json:"plan,omitempty"`
+	Subtasks   []orchestrationSubtaskState  `json:"subtasks,omitempty"`
 	Results    []orchestrator.SubtaskResult `json:"results,omitempty"`
 	Summary    string                       `json:"summary,omitempty"`
 	CreatedAt  time.Time                    `json:"createdAt"`
 	UpdatedAt  time.Time                    `json:"updatedAt"`
+}
+
+type orchestrationSubtaskState struct {
+	ID          string                      `json:"id"`
+	Description string                      `json:"description"`
+	AgentName   string                      `json:"agent_type"`
+	Status      string                      `json:"status"`
+	StartedAt   *time.Time                  `json:"startedAt,omitempty"`
+	FinishedAt  *time.Time                  `json:"finishedAt,omitempty"`
+	Result      *orchestrator.SubtaskResult `json:"result,omitempty"`
 }
 
 func (s *Server) handleOrchestrate(w http.ResponseWriter, r *http.Request) {
@@ -550,14 +562,29 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 		return
 	}
 	record.Plan = plan
+	record.Subtasks = makeSubtaskStates(plan)
 	record.Status = "running"
 	record.UpdatedAt = time.Now().UTC()
 	if err := saveOrchestrationRecord(record); err != nil {
 		slog.Warn("save orchestration failed", "id", record.ID, "error", err)
 	}
 
-	results, err := orch.Execute(context.Background(), plan)
+	orch.SetSubtaskTimeout(orchestrateSubtaskTimeout())
+	var mu sync.Mutex
+	observer := func(event orchestrator.SubtaskEvent) {
+		mu.Lock()
+		defer mu.Unlock()
+		applySubtaskEvent(record, &event)
+		record.UpdatedAt = time.Now().UTC()
+		if err := saveOrchestrationRecord(record); err != nil {
+			slog.Warn("save orchestration failed", "id", record.ID, "error", err)
+		}
+	}
+
+	results, err := orch.ExecuteWithObserver(context.Background(), plan, observer)
 	if err != nil {
+		mu.Lock()
+		defer mu.Unlock()
 		record.Status = "failed"
 		record.Error = "execute: " + err.Error()
 		record.Results = results
@@ -569,6 +596,8 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 	}
 
 	summary := orch.MergeResults(results)
+	mu.Lock()
+	defer mu.Unlock()
 	record.Results = results
 	record.Summary = summary
 	record.Status = "completed"
@@ -613,6 +642,61 @@ func (s *Server) handleOrchestrateDetail(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(record) //nolint:errcheck // best-effort response
+}
+
+func makeSubtaskStates(plan *orchestrator.TaskPlan) []orchestrationSubtaskState {
+	if plan == nil || len(plan.Subtasks) == 0 {
+		return []orchestrationSubtaskState{}
+	}
+	states := make([]orchestrationSubtaskState, 0, len(plan.Subtasks))
+	for _, subtask := range plan.Subtasks {
+		states = append(states, orchestrationSubtaskState{
+			ID:          subtask.ID,
+			Description: subtask.Description,
+			AgentName:   subtask.AgentName,
+			Status:      "pending",
+		})
+	}
+	return states
+}
+
+func applySubtaskEvent(record *orchestrationRecord, event *orchestrator.SubtaskEvent) {
+	if len(record.Subtasks) == 0 && record.Plan != nil {
+		record.Subtasks = makeSubtaskStates(record.Plan)
+	}
+	for i := range record.Subtasks {
+		if record.Subtasks[i].ID != event.Subtask.ID {
+			continue
+		}
+		switch event.Type {
+		case orchestrator.SubtaskStarted:
+			started := event.Started
+			record.Subtasks[i].Status = "running"
+			record.Subtasks[i].StartedAt = &started
+		case orchestrator.SubtaskCompleted:
+			finished := event.Finished
+			record.Subtasks[i].FinishedAt = &finished
+			record.Subtasks[i].Result = event.Result
+			if event.Result != nil && event.Result.Success {
+				record.Subtasks[i].Status = "completed"
+			} else {
+				record.Subtasks[i].Status = "failed"
+			}
+		}
+		return
+	}
+}
+
+func orchestrateSubtaskTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("AGENTOS_ORCHESTRATE_SUBTASK_TIMEOUT"))
+	if raw == "" {
+		return 10 * time.Minute
+	}
+	timeout, err := time.ParseDuration(raw)
+	if err != nil || timeout <= 0 {
+		return 10 * time.Minute
+	}
+	return timeout
 }
 
 func resolveOrchestrateRepo(repo, baseBranch string) (string, error) {

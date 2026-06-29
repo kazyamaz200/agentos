@@ -20,6 +20,7 @@ litellm --config litellm_config.yaml
 | `AGENTOS_MODEL_EMBEDDING` | `text-embedding-ada-002` | Model alias for embeddings |
 | `AGENTOS_LLM_DEFAULT_PRESET` | `default` | Default Web UI model preset ID |
 | `AGENTOS_LLM_PRESETS` | generated default | JSON array of server-side LLM presets |
+| `AGENTOS_ORCHESTRATE_SUBTASK_TIMEOUT` | `10m` | Maximum runtime for one orchestration subtask |
 
 ### Web UI Model Presets
 

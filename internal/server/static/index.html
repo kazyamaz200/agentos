@@ -474,16 +474,18 @@ function statCard(label, value, color) {
 
 function renderRuns(r) {
   const subtasks = r.plan && r.plan.subtasks ? r.plan.subtasks : [];
+  const states = r.subtasks || [];
   const results = r.results || [];
   const byID = {};
   results.forEach(x => { byID[x.subtask_id] = x; });
   const runForm = renderScopedRunForm(r);
-  if (subtasks.length === 0 && results.length === 0) {
+  if (states.length === 0 && subtasks.length === 0 && results.length === 0) {
     return runForm + '<div class="card"><p class="empty">Runs will appear after planning starts.</p></div>';
   }
-  const rows = (subtasks.length ? subtasks : results.map(x => ({id:x.subtask_id,description:'',agent_type:'-'}))).map(s => {
-    const result = byID[s.id] || {};
-    const status = result.subtask_id ? (result.success ? 'pass' : 'failed') : 'pending';
+  const runItems = states.length ? states : (subtasks.length ? subtasks : results.map(x => ({id:x.subtask_id,description:'',agent_type:'-'})));
+  const rows = runItems.map(s => {
+    const result = s.result || byID[s.id] || {};
+    const status = s.status || (result.subtask_id ? (result.success ? 'pass' : 'failed') : 'pending');
     return '<tr><td>' + escape(s.id) + '</td><td>' + statusSpan(status) + '</td><td>' + escape(s.agent_type || '-') + '</td><td>' + escape(s.description || '-') + '</td></tr>' +
       (result.output || result.error || result.diff ? '<tr><td colspan="4"><pre>' + escape((result.error || '') + (result.output ? '\n' + result.output : '') + (result.diff ? '\n' + result.diff : '')).slice(0, 5000) + '</pre></td></tr>' : '');
   }).join('');

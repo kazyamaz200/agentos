@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kazyamaz200/agentos/internal/orchestrator"
 )
 
 func TestNewServer_ReturnsServer(t *testing.T) {
@@ -800,5 +802,35 @@ func TestParseLLMPresets(t *testing.T) {
 	}
 	if presets[0].BaseURL != "http://litellm:4000" || presets[0].APIKeyEnv != "LITELLM_API_KEY" {
 		t.Fatalf("preset = %+v", presets[0])
+	}
+}
+
+func TestApplySubtaskEvent(t *testing.T) {
+	record := &orchestrationRecord{
+		Plan: &orchestrator.TaskPlan{Subtasks: []orchestrator.Subtask{{
+			ID:          "step-1",
+			Description: "do work",
+			AgentName:   "go-backend",
+		}}},
+	}
+	started := time.Now().UTC()
+	applySubtaskEvent(record, &orchestrator.SubtaskEvent{
+		Type:    orchestrator.SubtaskStarted,
+		Subtask: record.Plan.Subtasks[0],
+		Started: started,
+	})
+	if len(record.Subtasks) != 1 || record.Subtasks[0].Status != "running" || record.Subtasks[0].StartedAt == nil {
+		t.Fatalf("started state = %+v", record.Subtasks)
+	}
+
+	finished := started.Add(time.Second)
+	applySubtaskEvent(record, &orchestrator.SubtaskEvent{
+		Type:     orchestrator.SubtaskCompleted,
+		Subtask:  record.Plan.Subtasks[0],
+		Finished: finished,
+		Result:   &orchestrator.SubtaskResult{SubtaskID: "step-1", Success: true},
+	})
+	if record.Subtasks[0].Status != "completed" || record.Subtasks[0].FinishedAt == nil || record.Subtasks[0].Result == nil {
+		t.Fatalf("completed state = %+v", record.Subtasks[0])
 	}
 }
