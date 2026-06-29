@@ -427,6 +427,36 @@ func TestRecoverNoOpDocs_CreatesRequiredREADME(t *testing.T) {
 	}
 }
 
+func TestRecoverBuiltInSubtask_UsesFreshContextAfterTimeout(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	runSandbox := sandbox.NewLocalSandbox(repo)
+	if err := runSandbox.PrepareRun("run-step-1"); err != nil {
+		t.Fatalf("PrepareRun() error = %v", err)
+	}
+	o := NewOrchestrator(
+		llm.NewMockLLMClient(nil),
+		sandbox.NewLocalSandbox(repo),
+		map[string]runtime.Agent{"go-backend": &recordingAgent{name: "go-backend"}},
+		&runtime.Config{},
+	)
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result, ok := o.recoverBuiltInSubtask(canceledCtx, Subtask{
+		ID:          "step-1",
+		AgentName:   "go-backend",
+		Description: "Create /healthz with net/http in https://github.com/kazyamaz200/agentos-test.git",
+	}, runSandbox, context.DeadlineExceeded)
+	if !ok || !result.Success {
+		t.Fatalf("recoverBuiltInSubtask() = (%+v, %v), want success despite canceled subtask context", result, ok)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "main.go")); err != nil {
+		t.Fatalf("main.go not created: %v", err)
+	}
+}
+
 func TestInferModulePath_ExtractsGitHubURLWithoutRegex(t *testing.T) {
 	t.Parallel()
 

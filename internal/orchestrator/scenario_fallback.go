@@ -23,6 +23,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kazyamaz200/agentos/internal/sandbox"
 )
@@ -31,13 +32,15 @@ func (o *Orchestrator) recoverBuiltInSubtask(ctx context.Context, subtask Subtas
 	if !isCanonicalGoServiceTask(subtask.Description) {
 		return SubtaskResult{}, false
 	}
+	recoveryCtx, cancel := fallbackRecoveryContext()
+	defer cancel()
 
 	switch subtask.AgentName {
 	case "go-backend":
-		out, err := recoverGoBackend(ctx, runSandbox.RootDir(), subtask.Description)
+		out, err := recoverGoBackend(recoveryCtx, runSandbox.RootDir(), subtask.Description)
 		return o.recoveredSubtaskResult(subtask, runSandbox, out, runtimeErr, err), err == nil
 	case "ci-fixer":
-		out, err := recoverGoCI(ctx, runSandbox.RootDir())
+		out, err := recoverGoCI(recoveryCtx, runSandbox.RootDir())
 		return o.recoveredSubtaskResult(subtask, runSandbox, out, runtimeErr, err), err == nil
 	case "docs":
 		out, err := recoverDocs(runSandbox.RootDir(), subtask.Description)
@@ -54,13 +57,15 @@ func (o *Orchestrator) recoverNoOpBuiltInSubtask(ctx context.Context, subtask Su
 	if !isCanonicalGoServiceTask(subtask.Description) {
 		return SubtaskResult{}, false
 	}
+	recoveryCtx, cancel := fallbackRecoveryContext()
+	defer cancel()
 
 	switch subtask.AgentName {
 	case "go-backend":
 		if fileExists(filepath.Join(runSandbox.RootDir(), "go.mod")) && fileExists(filepath.Join(runSandbox.RootDir(), "main.go")) {
 			return SubtaskResult{}, false
 		}
-		out, err := recoverGoBackend(ctx, runSandbox.RootDir(), subtask.Description)
+		out, err := recoverGoBackend(recoveryCtx, runSandbox.RootDir(), subtask.Description)
 		return o.recoveredSubtaskResult(subtask, runSandbox, out, errors.New("runtime completed without required Go service files"), err), err == nil
 	case "docs":
 		if readmeCoversScenario(runSandbox.RootDir()) {
@@ -71,6 +76,10 @@ func (o *Orchestrator) recoverNoOpBuiltInSubtask(ctx context.Context, subtask Su
 	default:
 		return SubtaskResult{}, false
 	}
+}
+
+func fallbackRecoveryContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 90*time.Second)
 }
 
 func (o *Orchestrator) recoveredSubtaskResult(subtask Subtask, runSandbox sandbox.Sandbox, output string, runtimeErr, fallbackErr error) SubtaskResult {
