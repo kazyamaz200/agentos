@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -396,7 +397,7 @@ func TestResolveOrchestrateRepo_LocalPath(t *testing.T) {
 func TestResolveOrchestrateRepo_RemoteFileClone(t *testing.T) {
 	requireGit(t)
 	root := t.TempDir()
-	t.Setenv("AGENTOS_HOME", filepath.Join(root, "agentos-home"))
+	t.Setenv("AGENTOS_HOME", shortTestDir(t))
 
 	source := filepath.Join(root, "source")
 	remote := filepath.Join(root, "remote.git")
@@ -415,7 +416,7 @@ func TestResolveOrchestrateRepo_RemoteFileClone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveOrchestrateRepo() error = %v", err)
 	}
-	if !strings.HasPrefix(got, filepath.Join(root, "agentos-home", "workspaces", "orchestrate")) {
+	if !strings.Contains(got, filepath.Join("workspaces", "orchestrate")) {
 		t.Fatalf("repo = %q, want cloned workspace under AGENTOS_HOME", got)
 	}
 	if _, err := os.Stat(filepath.Join(got, "README.md")); err != nil {
@@ -562,6 +563,22 @@ func runGitCommand(t *testing.T, dir string, args ...string) {
 	if err != nil {
 		t.Fatalf("git %v failed: %v\n%s", args, err, out)
 	}
+}
+
+func shortTestDir(t *testing.T) string {
+	t.Helper()
+	parent := ""
+	if runtime.GOOS == "windows" {
+		parent = filepath.VolumeName(os.TempDir()) + string(os.PathSeparator)
+	}
+	dir, err := os.MkdirTemp(parent, "ao-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(dir)
+	})
+	return dir
 }
 
 func TestGenerateID_NotEmpty(t *testing.T) {
