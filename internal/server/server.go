@@ -560,7 +560,9 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 		orch.SetStrategy(orchestrator.StrategyParallel)
 	}
 
-	plan, err := orch.Plan(context.Background(), record.Task)
+	planCtx, cancelPlan := context.WithTimeout(context.Background(), orchestratePlanTimeout())
+	defer cancelPlan()
+	plan, err := orch.Plan(planCtx, record.Task)
 	if err != nil {
 		record.Status = "failed"
 		record.Error = "plan: " + err.Error()
@@ -704,6 +706,18 @@ func orchestrateSubtaskTimeout() time.Duration {
 	timeout, err := time.ParseDuration(raw)
 	if err != nil || timeout <= 0 {
 		return 10 * time.Minute
+	}
+	return timeout
+}
+
+func orchestratePlanTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("AGENTOS_ORCHESTRATE_PLAN_TIMEOUT"))
+	if raw == "" {
+		return 90 * time.Second
+	}
+	timeout, err := time.ParseDuration(raw)
+	if err != nil || timeout <= 0 {
+		return 90 * time.Second
 	}
 	return timeout
 }

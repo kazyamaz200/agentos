@@ -186,10 +186,10 @@ Break this task into subtasks and assign each to the most suitable agent.`, task
 		Model:       o.llm.ModelName(),
 		Messages:    []llm.Message{systemMsg, userMsg},
 		Temperature: 0.2,
-		MaxTokens:   16384,
+		MaxTokens:   4096,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("LLM plan: %w", err)
+		return o.fallbackPlan(taskDesc), nil
 	}
 
 	content := resp.Choices[0].Message.Content
@@ -199,16 +199,70 @@ Break this task into subtasks and assign each to the most suitable agent.`, task
 	content = strings.TrimSuffix(content, "```")
 	content = strings.TrimSpace(content)
 	if content == "" {
-		return nil, fmt.Errorf("empty LLM plan content")
+		return o.fallbackPlan(taskDesc), nil
 	}
 
 	var plan TaskPlan
 	if err := json.Unmarshal([]byte(content), &plan); err != nil {
-		return nil, fmt.Errorf("parse plan: %w", err)
+		return o.fallbackPlan(taskDesc), nil
 	}
 
 	plan.Description = taskDesc
 	return &plan, nil
+}
+
+func (o *Orchestrator) fallbackPlan(taskDesc string) *TaskPlan {
+	available := make(map[string]bool, len(o.agentDefs))
+	for _, info := range o.agentDefs {
+		available[info.name] = true
+	}
+
+	var subtasks []Subtask
+	add := func(id, agentName, description string, deps []string) {
+		if available[agentName] {
+			subtasks = append(subtasks, Subtask{
+				ID:          id,
+				AgentName:   agentName,
+				Description: description,
+				Deps:        deps,
+			})
+		}
+	}
+
+	add("step-1", "go-backend", "Implement the requested backend and application changes.", nil)
+	add("step-2", "docs", "Update documentation for the requested changes, usage, and verification steps.", nil)
+	ciDeps := dependenciesForAvailable(available, "go-backend")
+	add("step-3", "ci-fixer", "Add or fix tests and CI configuration so project validation succeeds.", ciDeps)
+	reviewerDeps := dependenciesForAvailable(available, "go-backend", "docs", "ci-fixer")
+	add("step-4", "reviewer", "Review the final diff and summarize any release-blocking findings.", reviewerDeps)
+
+	if len(subtasks) == 0 {
+		for i, info := range o.agentDefs {
+			subtasks = append(subtasks, Subtask{
+				ID:          fmt.Sprintf("step-%d", i+1),
+				AgentName:   info.name,
+				Description: taskDesc,
+			})
+		}
+	}
+
+	return &TaskPlan{Description: taskDesc, Subtasks: subtasks}
+}
+
+func dependenciesForAvailable(available map[string]bool, agents ...string) []string {
+	ids := map[string]string{
+		"go-backend": "step-1",
+		"docs":       "step-2",
+		"ci-fixer":   "step-3",
+		"reviewer":   "step-4",
+	}
+	var deps []string
+	for _, agentName := range agents {
+		if available[agentName] {
+			deps = append(deps, ids[agentName])
+		}
+	}
+	return deps
 }
 
 // Execute runs all subtasks in the plan according to the configured strategy.
