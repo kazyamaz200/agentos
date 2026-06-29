@@ -130,6 +130,37 @@ func TestPlan_EmptyLLMContentUsesFallbackPlan(t *testing.T) {
 	}
 }
 
+func TestPlan_EnrichesGeneratedSubtasksWithParentRequirements(t *testing.T) {
+	t.Parallel()
+
+	o := NewOrchestrator(
+		llm.NewMockLLMClient([]llm.ChatResponse{{
+			Choices: []llm.Choice{{Message: llm.Message{
+				Role:    llm.RoleAssistant,
+				Content: `{"description":"test","subtasks":[{"id":"step-1","description":"implement server","agent_type":"go-backend","dependencies":[]}]}`,
+			}}},
+		}}),
+		sandbox.NewLocalSandbox(t.TempDir()),
+		map[string]runtime.Agent{"go-backend": &recordingAgent{name: "go-backend"}},
+		&runtime.Config{},
+	)
+
+	parentTask := `Create /healthz returning {"status":"ok"} and / using net/http.`
+	plan, err := o.Plan(context.Background(), parentTask)
+	if err != nil {
+		t.Fatalf("Plan() error = %v", err)
+	}
+	if len(plan.Subtasks) != 1 {
+		t.Fatalf("got %d subtasks, want 1", len(plan.Subtasks))
+	}
+	description := plan.Subtasks[0].Description
+	for _, want := range []string{"go.mod", "main.go", `{"status":"ok"}`, parentTask} {
+		if !strings.Contains(description, want) {
+			t.Fatalf("enriched description missing %q: %s", want, description)
+		}
+	}
+}
+
 func TestExecuteWithObserver_EmitsSubtaskEvents(t *testing.T) {
 	repo := t.TempDir()
 	t.Setenv("AGENTOS_HOME", filepath.Join(t.TempDir(), "agentos-home"))
