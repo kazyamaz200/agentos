@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/kazyamaz200/agentos/internal/llm"
 	"github.com/kazyamaz200/agentos/internal/runtime"
@@ -87,6 +88,45 @@ func TestExecute_EmptyPlan(t *testing.T) {
 	}
 	if len(results) != 0 {
 		t.Errorf("got %d results, want 0", len(results))
+	}
+}
+
+func TestExecuteWithObserver_EmitsSubtaskEvents(t *testing.T) {
+	repo := t.TempDir()
+	t.Setenv("AGENTOS_HOME", filepath.Join(t.TempDir(), "agentos-home"))
+
+	o := NewOrchestrator(
+		llm.NewMockLLMClient(nil),
+		sandbox.NewLocalSandbox(repo),
+		map[string]runtime.Agent{"test-agent": &recordingAgent{}},
+		&runtime.Config{},
+	)
+	o.SetSubtaskTimeout(time.Minute)
+
+	var events []SubtaskEvent
+	results, err := o.ExecuteWithObserver(context.Background(), &TaskPlan{
+		Subtasks: []Subtask{{
+			ID:          "step-1",
+			Description: "exercise repo",
+			AgentName:   "test-agent",
+		}},
+	}, func(event SubtaskEvent) {
+		events = append(events, event)
+	})
+	if err != nil {
+		t.Fatalf("ExecuteWithObserver() error = %v", err)
+	}
+	if len(results) != 1 || !results[0].Success {
+		t.Fatalf("results = %+v, want one success", results)
+	}
+	if len(events) != 2 {
+		t.Fatalf("events = %+v, want started and completed", events)
+	}
+	if events[0].Type != SubtaskStarted || events[1].Type != SubtaskCompleted {
+		t.Fatalf("event types = %s, %s", events[0].Type, events[1].Type)
+	}
+	if events[1].Result == nil || !events[1].Result.Success {
+		t.Fatalf("completed event result = %+v, want success", events[1].Result)
 	}
 }
 
