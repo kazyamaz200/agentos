@@ -22,7 +22,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/kazyamaz200/agentos/internal/sandbox"
@@ -287,15 +286,31 @@ func recoverReview(root string) (string, error) {
 }
 
 func inferModulePath(description, root string) string {
-	re := regexp.MustCompile(`github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+`)
-	if match := re.FindString(description); match != "" {
-		return match
+	for _, token := range strings.Fields(description) {
+		if modulePath := githubModuleFromToken(token); modulePath != "" {
+			return modulePath
+		}
 	}
 	name := filepath.Base(root)
 	if name == "." || name == string(filepath.Separator) || name == "" {
 		return "agentos-scenario"
 	}
 	return name
+}
+
+func githubModuleFromToken(token string) string {
+	token = strings.Trim(token, " \t\r\n.,;:()[]{}<>\"'`")
+	token = strings.TrimPrefix(token, "https://")
+	token = strings.TrimPrefix(token, "http://")
+	if !strings.HasPrefix(token, "github.com/") {
+		return ""
+	}
+	token = strings.TrimSuffix(token, ".git")
+	parts := strings.Split(token, "/")
+	if len(parts) < 3 || parts[1] == "" || parts[2] == "" {
+		return ""
+	}
+	return strings.Join(parts[:3], "/")
 }
 
 func readmeCoversScenario(root string) bool {

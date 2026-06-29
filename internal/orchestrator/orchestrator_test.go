@@ -427,6 +427,15 @@ func TestRecoverNoOpDocs_CreatesRequiredREADME(t *testing.T) {
 	}
 }
 
+func TestInferModulePath_ExtractsGitHubURLWithoutRegex(t *testing.T) {
+	t.Parallel()
+
+	got := inferModulePath("target repo is https://github.com/kazyamaz200/agentos-test.git and should expose /healthz", t.TempDir())
+	if got != "github.com/kazyamaz200/agentos-test" {
+		t.Fatalf("inferModulePath() = %q", got)
+	}
+}
+
 func TestStrategy_Constants(t *testing.T) {
 	t.Parallel()
 
