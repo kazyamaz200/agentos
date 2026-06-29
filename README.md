@@ -101,7 +101,14 @@ agentos serve --port 8080
 agentos agent list
 
 # Multi-agent orchestration
-agentos orchestrate --agents "go-backend,reviewer" --task "Implement user auth"
+agentos orchestrate \
+  --agents "go-backend,reviewer,docs" \
+  --strategy parallel \
+  --repo . \
+  --task "Implement user auth, tests, and documentation"
+
+# Shell completion
+agentos completion zsh
 
 # GitHub operations
 agentos issue list --repo owner/repo
@@ -191,6 +198,7 @@ pr_body.md        # Pull request body draft
 - [Deployment](docs/deployment.md) — Kubernetes deployment via Helm
 - [Architecture](docs/architecture.md) — System architecture overview
 - [Configuration](docs/configuration.md) — LiteLLM, Qdrant, Docker, MCP, templates
+- [Upgrade to v1.0](docs/upgrade-v1.md) — Migration notes for v0.x users
 - [Profiles](docs/profiles.md) — Profile YAML schema reference
 - [Agent Definitions](docs/agent-definitions.md) — Versioned Agent YAML format (agentos.io/v1)
 - [Safety](docs/safety.md) — Safety mechanisms and command policies

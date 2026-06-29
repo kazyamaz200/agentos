@@ -28,7 +28,7 @@ func TestRootCommand_HasSubcommands(t *testing.T) {
 	expected := []string{
 		"version", "run", "review", "issue", "pr", "checks",
 		"ci-fix", "search", "memory", "mcp", "serve", "agent",
-		"orchestrate", "guideline",
+		"orchestrate", "guideline", "completion",
 	}
 	for _, name := range expected {
 		cmd, _, err := rootCmd.Find([]string{name})
@@ -39,6 +39,16 @@ func TestRootCommand_HasSubcommands(t *testing.T) {
 		if cmd.Name() != name {
 			t.Errorf("subcommand %q has Name = %q", name, cmd.Name())
 		}
+	}
+}
+
+func TestCompletionCommand_GeneratesBash(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"completion", "bash"})
+	if err != nil {
+		t.Fatalf("find completion command: %v", err)
+	}
+	if cmd.Name() != "completion" {
+		t.Fatalf("command = %q, want completion", cmd.Name())
 	}
 }
 

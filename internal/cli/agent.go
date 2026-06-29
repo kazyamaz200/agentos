@@ -43,6 +43,10 @@ var agentListCmd = &cobra.Command{
 var agentCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create an agent from a template file",
+	Long: `Create runnable agent definitions from a template file.
+
+Example:
+  agentos agent create --template profiles/agents/template.yaml`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := runAgentCreate(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -54,6 +58,13 @@ var agentCreateCmd = &cobra.Command{
 var agentRunCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Run an agent with a task description",
+	Long: `Run an agent from a template with an inline task description.
+
+Example:
+  agentos agent run \
+    --template profiles/agents/template.yaml \
+    --agent coder \
+    --task "Add validation and tests"`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := runAgentRun(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)

@@ -34,7 +34,11 @@ var orchestrateCmd = &cobra.Command{
 Agents are selected from the registry and can work sequentially or in parallel.
 
 Example:
-  agentos orchestrate --agents "go-backend,reviewer" --task "Implement user authentication"`,
+  agentos orchestrate \
+    --agents "go-backend,reviewer,docs" \
+    --strategy parallel \
+    --repo . \
+    --task "Implement user authentication, tests, and docs"`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := runOrchestrate(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)

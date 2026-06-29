@@ -25,6 +25,10 @@ helm install agentos agentos/agentos \
   --set secrets.litellmApiKey=<litellm-api-key>
 ```
 
+The chart repository is published from the `gh-pages` branch by the Helm Chart
+workflow. Already published chart versions are skipped, so bump
+`charts/agentos/Chart.yaml` before publishing a new chart release.
+
 ### From Local Chart
 
 ```bash

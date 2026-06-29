@@ -2,75 +2,124 @@
 
 ## Overview
 
-AgentOS is a coding agent execution platform designed for safe, reproducible code generation using LLMs via LiteLLM.
+AgentOS is a Go runtime for autonomous coding agents. It provides a stable
+agent interface, lifecycle orchestration, tool execution, memory, eventing,
+GitHub integration, and a Kubernetes-ready Web UI.
 
 ```
-User / CLI
-     |
-AgentOS CLI
-     |
-Agent Runtime
-     |
-Agent Profile
-     |
-Task Planner
-     |
-Tool Executor
-     |
-Review & Retry Loop
-     |
-Patch / Summary / PR Body Draft
+CLI / Web UI / REST API
+        |
+        v
+Runtime + Server
+        |
+        +--> Agent Registry / Agent Factory
+        |        |
+        |        v
+        |   runtime.Agent implementations
+        |
+        +--> Planner / Executor / Reviewer
+        |        |
+        |        v
+        |   Tool Registry + Sandbox
+        |
+        +--> Event Bus + Run Store + Memory
+        |
+        v
+LiteLLM / GitHub / Qdrant / MCP
 ```
 
-## Components
+## Entry Points
 
-### CLI Layer
-- `cmd/agentos/main.go` — Entry point
-- `internal/cli/` — Command definitions (root, agent, checks, ci-fix, guideline, issue, mcp, memory, orchestrate, pr, review, run, search, serve, version)
+- `cmd/agentos/main.go` starts the CLI.
+- `internal/cli/` defines commands for run, review, issue, PR, checks, CI fix,
+  search, memory, MCP, serve, agents, orchestration, guidelines, completion,
+  and version output.
+- `internal/server/` serves the Web UI, REST APIs, GitHub OAuth session flow,
+  LLM presets, run history, and remote repository orchestration.
 
-### Runtime Layer
-- `internal/runtime/runtime.go` — Orchestrates the full run lifecycle
-- `internal/runtime/context.go` — Run context carrying task, profile, tools
-- `internal/runtime/result.go` — Data types for plans, results, reviews
+## Runtime
 
-### Agent Layer
-- `internal/agent/agent.go` — Core interfaces
-- `internal/agent/planner.go` — LLM-based task planning
-- `internal/agent/reviewer.go` — LLM-based code review
-- `internal/agent/retry.go` — Retry logic for failed steps
+The runtime layer owns the coding run lifecycle:
 
-### LLM Layer
-- `internal/llm/client.go` — LLM client interface and LiteLLM implementation
-- `internal/llm/types.go` — Request/response types
-- `internal/llm/litellm.go` — Environment-based configuration
-- `internal/llm/prompts.go` — System prompts for planner, coder, reviewer
+1. Load task YAML.
+2. Load a profile or versioned agent definition.
+3. Resolve the target repository and sandbox.
+4. Create or select a task branch.
+5. Ask the agent to plan.
+6. Execute tool-backed plan steps.
+7. Run test and lint commands.
+8. Retry failed execution when the profile allows it.
+9. Review the resulting diff.
+10. Persist artifacts and emit events.
 
-### Tool Layer
-- `internal/tools/tool.go` — Tool interface and registry
-- `internal/tools/filesystem.go` — Read/write files
-- `internal/tools/shell.go` — Shell command execution with safety policy
-- `internal/tools/git.go` — Git operations
-- `internal/tools/test.go` — Test execution
-- `internal/tools/search.go` — Code search
+Key packages:
 
-### Safety Layer
-- `internal/safety/command_policy.go` — Command denylist enforcement
-- `internal/safety/secrets.go` — Secret file detection
+- `internal/runtime/` contains run context, lifecycle configuration, and result
+  types.
+- `internal/agent/` contains the base agent, planner, reviewer, retry handler,
+  built-in agents, and registry.
+- `internal/profile/` and `internal/task/` load YAML configuration.
 
-### State Layer
-- `internal/state/run_store.go` — Run state persistence
-- `internal/state/logger.go` — JSONL logging for tools and LLM calls
+## Agent Registry And Factory
 
-## Run Lifecycle
+AgentOS v1.0 supports two ways to create agents:
 
-1. Load task YAML
-2. Load profile YAML
-3. Verify repository exists
-4. Create feature branch
-5. LLM generates a plan (structured JSON)
-6. Execute plan steps using registered tools
-7. Run tests and lint
-8. Retry on failure (up to max_retries)
-9. LLM reviews the diff
-10. Generate summary.md and pr_body.md
-11. Save all artifacts to `.agentos/runs/{task_id}/`
+- Built-in registry entries: `go-backend`, `reviewer`, `ci-fixer`, and `docs`.
+- Versioned definitions using `apiVersion: agentos.io/v1`.
+
+`internal/factory/` converts definition YAML into runnable agents by wiring the
+LLM client, tool registry, command policy, and sandbox. This keeps external
+agent definitions declarative while preserving the same runtime interface used
+by built-in agents.
+
+## Tools And Sandbox
+
+Tools are registered through `internal/tools/` and expose a stable description
+and execution contract. Built-in tools cover filesystem access, search, shell,
+git, and test execution.
+
+The sandbox abstraction lives in `internal/sandbox/`. The local sandbox is the
+active v1.0 backend. A Docker backend interface exists as an extension point for
+future isolated execution.
+
+## Safety
+
+`internal/safety/` enforces command deny rules and secret-file protections.
+Filesystem tools block sensitive paths such as `.env`, private keys, and PEM
+files. Shell execution applies profile-defined deny commands before running.
+
+## State, Events, And Memory
+
+- `internal/state/` persists run state, tool logs, LLM logs, diffs, summaries,
+  and PR body drafts under `AGENTOS_HOME`.
+- `internal/event/` provides a typed event bus and JSONL file store for
+  observability and replay.
+- `internal/memory/` and `internal/vector/` provide local JSON and Qdrant-backed
+  vector memory.
+- `internal/search/` unifies search across memory, guidelines, and past PR data.
+
+## Multi-Agent Orchestration
+
+`internal/orchestrator/` coordinates multiple `runtime.Agent` implementations
+against one task. The planner decomposes the task into subtasks, assigns each
+subtask to a named agent, and executes them sequentially or in parallel.
+
+The Web UI stores orchestration records under `AGENTOS_HOME/orchestrates` and
+tracks per-subtask status so long-running runs can be observed before the whole
+orchestration completes.
+
+## Integrations
+
+- `internal/llm/` talks to LiteLLM or any OpenAI-compatible endpoint.
+- `internal/github/` supports issues, pull requests, check runs, and CI-fixer
+  workflows.
+- `internal/mcp/` connects JSON-RPC stdio MCP servers and adapts their tools
+  into the AgentOS tool system.
+- `internal/embedding/` provides embedding requests for memory and search.
+
+## Deployment
+
+The Helm chart in `charts/agentos/` deploys the Web UI server with persistent
+storage, optional ingress, optional network policy, GitHub OAuth settings, and
+administrator-defined LLM presets. Docker images are published to
+`ghcr.io/kazyamaz200/agentos`.
