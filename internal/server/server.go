@@ -550,8 +550,8 @@ func safeRepoSlug(repo string) string {
 	if slug == "" {
 		return "repo"
 	}
-	if len(slug) > 80 {
-		return slug[len(slug)-80:]
+	if len(slug) > 40 {
+		return slug[len(slug)-40:]
 	}
 	return slug
 }
