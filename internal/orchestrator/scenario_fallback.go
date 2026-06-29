@@ -105,7 +105,7 @@ func recoverGoBackend(ctx context.Context, root, description string) (string, er
 	}
 	modulePath := inferModulePath(description, root)
 	if !fileExists(filepath.Join(root, "go.mod")) {
-		if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module "+modulePath+"\n\ngo 1.22\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module "+modulePath+"\n\ngo 1.22\n"), 0o600); err != nil {
 			return "", fmt.Errorf("write go.mod: %w", err)
 		}
 	}
@@ -134,7 +134,7 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }
 `
-	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(main), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(main), 0o600); err != nil {
 		return "", fmt.Errorf("write main.go: %w", err)
 	}
 	if err := runCmd(ctx, root, "gofmt", "-w", "main.go"); err != nil {
@@ -191,7 +191,7 @@ func TestRootHandler(t *testing.T) {
 	}
 }
 `
-	if err := os.WriteFile(filepath.Join(root, "main_test.go"), []byte(test), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "main_test.go"), []byte(test), 0o600); err != nil {
 		return "", fmt.Errorf("write main_test.go: %w", err)
 	}
 	workflowDir := filepath.Join(root, ".github", "workflows")
@@ -215,7 +215,7 @@ jobs:
       - run: go test ./...
       - run: go vet ./...
 `
-	if err := os.WriteFile(filepath.Join(workflowDir, "go.yml"), []byte(workflow), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workflowDir, "go.yml"), []byte(workflow), 0o600); err != nil {
 		return "", fmt.Errorf("write workflow: %w", err)
 	}
 	if err := runCmd(ctx, root, "gofmt", "-w", "main_test.go"); err != nil {
@@ -260,7 +260,7 @@ func recoverDocs(root, description string) (string, error) {
 	if strings.TrimSpace(description) != "" {
 		readme += "\n## Scenario\n\n" + strings.TrimSpace(description) + "\n"
 	}
-	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte(readme), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte(readme), 0o600); err != nil {
 		return "", fmt.Errorf("write README.md: %w", err)
 	}
 	return "Updated README.md with startup, endpoint, and test instructions.", nil
@@ -280,7 +280,7 @@ func recoverReview(root string) (string, error) {
 		"No release-blocking findings for this scenario.",
 		"",
 	}, "\n")
-	if err := os.WriteFile(filepath.Join(root, "REVIEW.md"), []byte(review), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "REVIEW.md"), []byte(review), 0o600); err != nil {
 		return "", fmt.Errorf("write REVIEW.md: %w", err)
 	}
 	return "Wrote scenario review summary.", nil
