@@ -424,6 +424,36 @@ func TestResolveOrchestrateRepo_RemoteFileClone(t *testing.T) {
 	}
 }
 
+func TestResolveOrchestrateRepo_EmptyRemoteFallsBackWithoutBranch(t *testing.T) {
+	requireGit(t)
+	root := t.TempDir()
+	t.Setenv("AGENTOS_HOME", shortTestDir(t))
+
+	remote := filepath.Join(root, "empty.git")
+	runGitCommand(t, root, "init", "--bare", remote)
+
+	got, err := resolveOrchestrateRepo("file://"+remote, "main")
+	if err != nil {
+		t.Fatalf("resolveOrchestrateRepo() error = %v", err)
+	}
+	if !strings.Contains(got, filepath.Join("workspaces", "orchestrate")) {
+		t.Fatalf("repo = %q, want cloned workspace under AGENTOS_HOME", got)
+	}
+	if _, err := os.Stat(filepath.Join(got, ".git")); err != nil {
+		t.Fatalf("cloned .git missing: %v", err)
+	}
+}
+
+func TestShouldRetryCloneWithoutBranch(t *testing.T) {
+	t.Parallel()
+	if !shouldRetryCloneWithoutBranch("fatal: Remote branch main not found in upstream origin") {
+		t.Fatal("expected retry for missing remote branch")
+	}
+	if shouldRetryCloneWithoutBranch("fatal: Authentication failed") {
+		t.Fatal("did not expect retry for auth failure")
+	}
+}
+
 func TestNormalizeRemoteRepo(t *testing.T) {
 	t.Parallel()
 	tests := map[string]string{
