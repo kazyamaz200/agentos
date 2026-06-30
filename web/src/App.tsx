@@ -229,8 +229,8 @@ function App() {
 
   useEffect(() => {
     if (!canUseApp) return
-    void Promise.all([loadAgents(), loadLLM(), loadTemplates(), loadRecords()])
-  }, [canUseApp, form.repo, form.baseBranch])
+    void Promise.all([loadAgents(), loadLLM(), loadRecords()])
+  }, [canUseApp])
 
   useEffect(() => {
     if (!selectedID) return
