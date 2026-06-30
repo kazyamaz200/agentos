@@ -798,7 +798,8 @@ func (s *Server) handleOrchestrateCancel(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "orchestration is not running", http.StatusConflict)
 		return
 	}
-	if !s.cancelActiveOrchestration(id) {
+	cancelRun, ok := s.prepareCancelActiveOrchestration(id)
+	if !ok {
 		http.Error(w, "orchestration is not active on this server", http.StatusConflict)
 		return
 	}
@@ -808,9 +809,11 @@ func (s *Server) handleOrchestrateCancel(w http.ResponseWriter, r *http.Request,
 	appendOrchestrationEvent(record, "canceled", "", "Orchestration canceled")
 	record.UpdatedAt = time.Now().UTC()
 	if err := saveOrchestrationRecord(record); err != nil {
+		cancelRun()
 		http.Error(w, "save orchestration: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	cancelRun()
 	_ = json.NewEncoder(w).Encode(record) //nolint:errcheck // best-effort response
 }
 
@@ -828,6 +831,15 @@ func (s *Server) unregisterActiveOrchestration(id string) {
 }
 
 func (s *Server) cancelActiveOrchestration(id string) bool {
+	cancel, ok := s.prepareCancelActiveOrchestration(id)
+	if !ok {
+		return false
+	}
+	cancel()
+	return true
+}
+
+func (s *Server) prepareCancelActiveOrchestration(id string) (context.CancelFunc, bool) {
 	s.activeMu.Lock()
 	cancel := s.activeRuns[id]
 	if cancel != nil {
@@ -835,10 +847,9 @@ func (s *Server) cancelActiveOrchestration(id string) bool {
 	}
 	s.activeMu.Unlock()
 	if cancel == nil {
-		return false
+		return nil, false
 	}
-	cancel()
-	return true
+	return cancel, true
 }
 
 func (s *Server) isOrchestrationCanceled(id string) bool {
