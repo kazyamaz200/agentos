@@ -39,7 +39,7 @@ jobs:
 
       - name: Install Playwright browser
         working-directory: web
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       - name: Responsive smoke
         working-directory: web
