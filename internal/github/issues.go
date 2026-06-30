@@ -23,6 +23,11 @@ type CreateIssueRequest struct {
 	Labels []string `json:"labels,omitempty"`
 }
 
+// CreateIssueCommentRequest contains the parameters for creating an issue comment.
+type CreateIssueCommentRequest struct {
+	Body string `json:"body"`
+}
+
 // CreateIssue creates a new GitHub issue.
 func (c *Client) CreateIssue(req CreateIssueRequest) (*Issue, error) {
 	path := fmt.Sprintf("/%s/issues", c.RepoPath())
@@ -33,6 +38,18 @@ func (c *Client) CreateIssue(req CreateIssueRequest) (*Issue, error) {
 	}
 
 	return &issue, nil
+}
+
+// CreateIssueComment creates a comment on an existing GitHub issue.
+func (c *Client) CreateIssueComment(number int, req CreateIssueCommentRequest) (*IssueComment, error) {
+	path := fmt.Sprintf("/%s/issues/%d/comments", c.RepoPath(), number)
+
+	var comment IssueComment
+	if err := c.doJSON("POST", path, req, &comment); err != nil {
+		return nil, fmt.Errorf("create issue comment: %w", err)
+	}
+
+	return &comment, nil
 }
 
 // ListIssues lists GitHub issues, optionally filtered by state.
