@@ -126,9 +126,10 @@ helm upgrade --install agentos agentos/agentos \
   --set env.LITELLM_BASE_URL=http://litellm:4000
 ```
 
-Before publishing a chart release that changes `charts/agentos/**`, update both
-`version` and `appVersion` in `charts/agentos/Chart.yaml` intentionally so the
-chart release workflow can publish a new immutable chart version.
+The v1.2.0 chart defaults `image.tag` to `v1.2.0`. Before publishing, confirm
+that both `version` and `appVersion` in `charts/agentos/Chart.yaml` still match
+the intended release so the chart release workflow can publish a new immutable
+chart version.
 
 ## Final Release Checklist
 
