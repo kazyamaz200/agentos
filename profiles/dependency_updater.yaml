@@ -1,0 +1,47 @@
+name: "dependency-updater"
+role: "Dependency update agent"
+
+llm:
+  provider: "litellm"
+  model: "coder"
+  temperature: 0.2
+  max_tokens: 8192
+
+tools:
+  allow:
+    - read_file
+    - write_file
+    - search
+    - shell
+    - git
+    - test
+  deny_commands:
+    - "rm -rf"
+    - "sudo"
+    - "docker run --privileged"
+    - "curl"
+    - "wget"
+
+commands:
+  test: "go test ./..."
+  lint: "go vet ./..."
+  build: ""
+
+limits:
+  max_iterations: 6
+  max_retries: 2
+  max_changed_files: 20
+  max_runtime_minutes: 30
+
+output:
+  mode: "patch"
+
+guidance:
+  architecture:
+    - "Inspect existing dependency managers, lockfiles, toolchain versions, and CI compatibility before updating versions."
+    - "Prefer narrow updates requested by the task; avoid broad upgrades unless the task calls for them."
+    - "Keep generated files such as go.sum or lockfiles consistent with the manifest that changed."
+  output_expectations:
+    - "Manifests and lockfiles remain synchronized after updates."
+    - "go mod tidy and go test ./... pass for Go dependency work."
+    - "Compatibility or breaking-change notes are included when versions move across major or security-sensitive boundaries."

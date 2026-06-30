@@ -50,11 +50,11 @@ type QualityGateCheckResult struct {
 }
 
 func qualityGateForSubtask(subtask *Subtask) *QualityGate {
-	if !isCanonicalGoServiceTask(subtask.Description) {
-		return nil
-	}
 	switch subtask.AgentName {
 	case "go-backend":
+		if !isCanonicalGoServiceTask(subtask.Description) {
+			return nil
+		}
 		return &QualityGate{
 			RequiredFiles:      []string{"go.mod", "main.go"},
 			ValidationCommands: []string{"go test ./...", "go vet ./..."},
@@ -64,6 +64,9 @@ func qualityGateForSubtask(subtask *Subtask) *QualityGate {
 			}},
 		}
 	case "ci-fixer":
+		if !isCanonicalGoServiceTask(subtask.Description) {
+			return nil
+		}
 		return &QualityGate{
 			RequiredFiles:      []string{"main_test.go", filepath.Join(".github", "workflows", "go.yml")},
 			ValidationCommands: []string{"go test ./..."},
@@ -73,6 +76,9 @@ func qualityGateForSubtask(subtask *Subtask) *QualityGate {
 			}},
 		}
 	case "docs":
+		if !isCanonicalGoServiceTask(subtask.Description) {
+			return nil
+		}
 		return &QualityGate{
 			RequiredFiles: []string{"README.md"},
 			ContentChecks: []QualityContentCheck{{
@@ -82,6 +88,37 @@ func qualityGateForSubtask(subtask *Subtask) *QualityGate {
 		}
 	case "reviewer":
 		return nil
+	case "security":
+		return &QualityGate{
+			RequiredFiles:      []string{"SECURITY.md"},
+			ValidationCommands: []string{"go test ./...", "go vet ./..."},
+			ContentChecks: []QualityContentCheck{{
+				File:     "SECURITY.md",
+				Contains: []string{"Security"},
+			}},
+		}
+	case "release-manager":
+		return &QualityGate{
+			RequiredFiles: []string{"CHANGELOG.md"},
+			ContentChecks: []QualityContentCheck{{
+				File:     "CHANGELOG.md",
+				Contains: []string{"Changelog", "v"},
+			}},
+		}
+	case "dependency-updater":
+		return &QualityGate{
+			RequiredFiles:      []string{"go.mod"},
+			ValidationCommands: []string{"go mod tidy -diff", "go test ./..."},
+		}
+	case "qa":
+		return &QualityGate{
+			RequiredFiles:      []string{"docs/testing.md"},
+			ValidationCommands: []string{"go test ./..."},
+			ContentChecks: []QualityContentCheck{{
+				File:     "docs/testing.md",
+				Contains: []string{"test"},
+			}},
+		}
 	default:
 		return nil
 	}

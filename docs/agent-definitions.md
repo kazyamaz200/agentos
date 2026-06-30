@@ -83,3 +83,7 @@ See `definitions/` directory:
 - `reviewer.yaml`
 - `ci-fixer.yaml`
 - `docs.yaml`
+- `security.yaml`
+- `release-manager.yaml`
+- `dependency-updater.yaml`
+- `qa.yaml`

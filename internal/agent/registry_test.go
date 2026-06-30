@@ -1,0 +1,42 @@
+package agent
+
+import "testing"
+
+func TestDefaultRegistryIncludesExpandedBuiltIns(t *testing.T) {
+	t.Parallel()
+
+	reg := DefaultRegistry()
+	for _, name := range []string{
+		"go-backend",
+		"reviewer",
+		"ci-fixer",
+		"docs",
+		"security",
+		"release-manager",
+		"dependency-updater",
+		"qa",
+	} {
+		if !reg.Has(name) {
+			t.Fatalf("DefaultRegistry missing %q", name)
+		}
+	}
+
+	infos := reg.List()
+	if len(infos) != 8 {
+		t.Fatalf("got %d built-in agents, want 8", len(infos))
+	}
+	for i := range infos {
+		if infos[i].Description == "" {
+			t.Fatalf("%s missing description", infos[i].Name)
+		}
+		if len(infos[i].RequiredTools) == 0 {
+			t.Fatalf("%s missing required tools", infos[i].Name)
+		}
+		if len(infos[i].ArchitectureGuidance) == 0 {
+			t.Fatalf("%s missing architecture guidance", infos[i].Name)
+		}
+		if len(infos[i].OutputExpectations) == 0 {
+			t.Fatalf("%s missing output expectations", infos[i].Name)
+		}
+	}
+}

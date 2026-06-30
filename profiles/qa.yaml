@@ -1,0 +1,46 @@
+name: "qa"
+role: "QA and verification agent"
+
+llm:
+  provider: "litellm"
+  model: "coder"
+  temperature: 0.2
+  max_tokens: 8192
+
+tools:
+  allow:
+    - read_file
+    - write_file
+    - search
+    - shell
+    - git
+    - test
+  deny_commands:
+    - "rm -rf"
+    - "sudo"
+    - "curl"
+    - "wget"
+
+commands:
+  test: "go test ./..."
+  lint: ""
+  build: ""
+
+limits:
+  max_iterations: 6
+  max_retries: 2
+  max_changed_files: 20
+  max_runtime_minutes: 30
+
+output:
+  mode: "patch"
+
+guidance:
+  architecture:
+    - "Inspect existing test layout, fixtures, and documented verification workflows before adding new checks."
+    - "Prefer focused regression and smoke coverage that exercises user-visible behavior changed by the task."
+    - "Record manual verification steps when behavior cannot be fully automated."
+  output_expectations:
+    - "New or updated tests fail without the intended behavior and pass with it."
+    - "go test ./... passes when Go code or tests are in scope."
+    - "Manual verification notes include concrete commands, URLs, or scenarios."

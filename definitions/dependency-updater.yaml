@@ -1,0 +1,41 @@
+apiVersion: agentos.io/v1
+kind: Agent
+metadata:
+  name: dependency-updater
+  labels:
+    role: dependency
+spec:
+  llm:
+    model: coder
+    temperature: 0.2
+    maxTokens: 8192
+  tools:
+    allow:
+      - read_file
+      - write_file
+      - search
+      - shell
+      - git
+      - test
+  safety:
+    denyCommands:
+      - rm -rf
+      - sudo
+      - docker run --privileged
+      - curl
+      - wget
+  commands:
+    test: go test ./...
+    lint: go vet ./...
+  limits:
+    maxRetries: 2
+    maxIterations: 6
+  guidance:
+    architecture:
+      - Inspect existing dependency managers, lockfiles, toolchain versions, and CI compatibility before updating versions.
+      - Prefer narrow updates requested by the task; avoid broad upgrades unless the task calls for them.
+      - Keep generated files such as go.sum or lockfiles consistent with the manifest that changed.
+    outputExpectations:
+      - Manifests and lockfiles remain synchronized after updates.
+      - go mod tidy and go test ./... pass for Go dependency work.
+      - Compatibility or breaking-change notes are included when versions move across major or security-sensitive boundaries.

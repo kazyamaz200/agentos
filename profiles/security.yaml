@@ -1,0 +1,49 @@
+name: "security"
+role: "Security review and remediation agent"
+
+llm:
+  provider: "litellm"
+  model: "coder"
+  temperature: 0.1
+  max_tokens: 8192
+
+tools:
+  allow:
+    - read_file
+    - write_file
+    - search
+    - shell
+    - git
+    - test
+  deny_commands:
+    - "rm -rf"
+    - "sudo"
+    - "docker run --privileged"
+    - "curl"
+    - "wget"
+    - "scp"
+    - "ssh"
+
+commands:
+  test: "go test ./..."
+  lint: "go vet ./..."
+  build: ""
+
+limits:
+  max_iterations: 6
+  max_retries: 2
+  max_changed_files: 20
+  max_runtime_minutes: 30
+
+output:
+  mode: "patch"
+
+guidance:
+  architecture:
+    - "Inspect authentication, authorization, session, secret-handling, dependency, and CI security conventions before proposing changes."
+    - "Prefer small defensive fixes, safer defaults, and standard library or existing dependency patterns over broad rewrites."
+    - "Document residual risk and validation scope when a finding cannot be fully fixed in the current task."
+  output_expectations:
+    - "Security-sensitive changes include tests or explicit manual verification notes."
+    - "Dependency or configuration findings identify the affected package, file, workflow, or setting."
+    - "go test ./... and go vet ./... pass when code is changed."

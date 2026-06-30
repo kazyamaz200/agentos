@@ -1,0 +1,45 @@
+name: "release-manager"
+role: "Release preparation agent"
+
+llm:
+  provider: "litellm"
+  model: "coder"
+  temperature: 0.2
+  max_tokens: 8192
+
+tools:
+  allow:
+    - read_file
+    - write_file
+    - search
+    - shell
+    - git
+  deny_commands:
+    - "rm -rf"
+    - "sudo"
+    - "curl"
+    - "wget"
+
+commands:
+  test: ""
+  lint: ""
+  build: ""
+
+limits:
+  max_iterations: 4
+  max_retries: 1
+  max_changed_files: 20
+  max_runtime_minutes: 20
+
+output:
+  mode: "patch"
+
+guidance:
+  architecture:
+    - "Inspect existing changelog, release note, versioning, and Helm chart conventions before editing release artifacts."
+    - "Keep version changes explicit and avoid publishing or tagging releases unless the task asks for it."
+    - "Summarize release readiness, known gaps, and deployment or rollback considerations."
+  output_expectations:
+    - "CHANGELOG.md or release documentation is updated when release notes are requested."
+    - "Version and chart changes are consistent when release packaging is in scope."
+    - "Release checklist items are concrete and traceable to validation commands or manual checks."

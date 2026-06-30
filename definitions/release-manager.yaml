@@ -1,0 +1,33 @@
+apiVersion: agentos.io/v1
+kind: Agent
+metadata:
+  name: release-manager
+  labels:
+    role: release
+spec:
+  llm:
+    model: coder
+    temperature: 0.2
+    maxTokens: 8192
+  tools:
+    allow:
+      - read_file
+      - write_file
+      - search
+      - shell
+      - git
+  commands:
+    test: ""
+    lint: ""
+  limits:
+    maxRetries: 1
+    maxIterations: 4
+  guidance:
+    architecture:
+      - Inspect existing changelog, release note, versioning, and Helm chart conventions before editing release artifacts.
+      - Keep version changes explicit and avoid publishing or tagging releases unless the task asks for it.
+      - Summarize release readiness, known gaps, and deployment or rollback considerations.
+    outputExpectations:
+      - CHANGELOG.md or release documentation is updated when release notes are requested.
+      - Version and chart changes are consistent when release packaging is in scope.
+      - Release checklist items are concrete and traceable to validation commands or manual checks.

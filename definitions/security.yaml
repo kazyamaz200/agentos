@@ -1,0 +1,43 @@
+apiVersion: agentos.io/v1
+kind: Agent
+metadata:
+  name: security
+  labels:
+    role: security
+spec:
+  llm:
+    model: coder
+    temperature: 0.1
+    maxTokens: 8192
+  tools:
+    allow:
+      - read_file
+      - write_file
+      - search
+      - shell
+      - git
+      - test
+  safety:
+    denyCommands:
+      - rm -rf
+      - sudo
+      - docker run --privileged
+      - curl
+      - wget
+      - scp
+      - ssh
+  commands:
+    test: go test ./...
+    lint: go vet ./...
+  limits:
+    maxRetries: 2
+    maxIterations: 6
+  guidance:
+    architecture:
+      - Inspect authentication, authorization, session, secret-handling, dependency, and CI security conventions before proposing changes.
+      - Prefer small defensive fixes, safer defaults, and standard library or existing dependency patterns over broad rewrites.
+      - Document residual risk and validation scope when a finding cannot be fully fixed in the current task.
+    outputExpectations:
+      - Security-sensitive changes include tests or explicit manual verification notes.
+      - Dependency or configuration findings identify the affected package, file, workflow, or setting.
+      - go test ./... and go vet ./... pass when code is changed.

@@ -142,7 +142,7 @@ func TestServer_AgentsEndpoint_ReturnsList(t *testing.T) {
 	s := NewServer(0)
 	w := serveRequest(s, "GET", "/api/agents", nil)
 	assertStatus(t, w.Code, http.StatusOK)
-	assertArrayLen(t, w.Body.Bytes(), 4)
+	assertArrayLen(t, w.Body.Bytes(), 8)
 }
 
 func TestServer_AgentsEndpoint_GoBackendExists(t *testing.T) {
@@ -157,6 +157,12 @@ func TestServer_AgentsEndpoint_GoBackendExists(t *testing.T) {
 	for _, a := range agents {
 		if a["Name"] == "go-backend" {
 			found = true
+			if guidance, ok := a["ArchitectureGuidance"].([]interface{}); !ok || len(guidance) == 0 {
+				t.Fatalf("go-backend missing architecture guidance: %+v", a)
+			}
+			if outputs, ok := a["OutputExpectations"].([]interface{}); !ok || len(outputs) == 0 {
+				t.Fatalf("go-backend missing output expectations: %+v", a)
+			}
 			break
 		}
 	}
@@ -1096,7 +1102,9 @@ func TestRecommendOrchestration_ClassifiesCommonTasks(t *testing.T) {
 		{"backend", "Add API endpoint to Go server", nil, "backend"},
 		{"docs", "Update README documentation", nil, "docs"},
 		{"security", "Fix CVE vulnerability and authz permission issue", nil, "security"},
+		{"release", "Prepare release notes and changelog for v1.2.0", nil, "release"},
 		{"dependency", "Bump dependencies", []string{"dependency"}, "dependency"},
+		{"qa", "Add smoke test and manual verification notes", nil, "qa"},
 		{"bugfix", "Fix regression causing panic", nil, "bugfix"},
 	}
 	for _, tt := range tests {
@@ -1122,6 +1130,39 @@ func TestServer_OrchestrateRecommendEndpoint(t *testing.T) {
 	}
 	if got.Preset != "ci-fix" || len(got.Agents) == 0 || !got.CreatePullRequest {
 		t.Fatalf("recommendation = %+v", got)
+	}
+}
+
+func TestRecommendOrchestration_UsesSpecializedBuiltInAgents(t *testing.T) {
+	t.Parallel()
+
+	reg := agent.DefaultRegistry()
+	tests := []struct {
+		task      string
+		want      string
+		wantAgent string
+	}{
+		{"Fix CVE and authz permission issue", "security", "security"},
+		{"Prepare release notes and rollback checklist", "release", "release-manager"},
+		{"Bump Go module dependencies", "dependency", "dependency-updater"},
+		{"Add smoke test and manual verification notes", "qa", "qa"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			got := recommendOrchestration(tt.task, nil, reg)
+			if got.Preset != tt.want {
+				t.Fatalf("Preset = %q, want %q; recommendation=%+v", got.Preset, tt.want, got)
+			}
+			found := false
+			for _, name := range got.Agents {
+				if name == tt.wantAgent {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("Agents = %+v, want %q", got.Agents, tt.wantAgent)
+			}
+		})
 	}
 }
 

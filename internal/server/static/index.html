@@ -884,11 +884,21 @@ async function loadAgents() {
       '<div class="agent-card"><h3>' + escape(a.Name) + ' <span class="muted">v' + escape(a.Version) + '</span></h3>' +
       '<p>' + escape(a.Description) + '</p>' +
       (a.Author ? '<p>Author: ' + escape(a.Author) + '</p>' : '') +
-      '<div class="tags">' + (a.RequiredTools || []).map(t => '<span class="tag">' + escape(t) + '</span>').join('') + '</div></div>'
+      '<div class="tags">' + (a.RequiredTools || []).map(t => '<span class="tag">' + escape(t) + '</span>').join('') + '</div>' +
+      renderAgentGuidance('Architecture', a.ArchitectureGuidance) +
+      renderAgentGuidance('Outputs', a.OutputExpectations) +
+      '</div>'
     ).join('');
   } catch(e) {
     document.getElementById('agentsList').innerHTML = '<p class="error">Error: ' + escape(e.message) + '</p>';
   }
+}
+
+function renderAgentGuidance(title, items) {
+  if (!items || items.length === 0) return '';
+  return '<h3>' + escape(title) + '</h3><div class="tags">' +
+    items.map(item => '<span class="tag">' + escape(item) + '</span>').join('') +
+    '</div>';
 }
 
 async function init() {
