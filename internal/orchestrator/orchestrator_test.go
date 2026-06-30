@@ -324,6 +324,43 @@ func TestExecuteParallel_SkipsSubtaskWhenDependencyFails(t *testing.T) {
 	}
 }
 
+func TestExecuteSequential_SkipsSubtaskWhenDependencyFails(t *testing.T) {
+	repo := t.TempDir()
+	t.Setenv("AGENTOS_HOME", filepath.Join(t.TempDir(), "agentos-home"))
+
+	agent := &recordingAgent{failTasks: map[string]bool{"step-1": true}}
+	o := NewOrchestrator(
+		llm.NewMockLLMClient(nil),
+		sandbox.NewLocalSandbox(repo),
+		map[string]runtime.Agent{"test-agent": agent},
+		&runtime.Config{},
+	)
+	o.SetSubtaskTimeout(time.Minute)
+
+	results, err := o.ExecuteWithObserver(context.Background(), &TaskPlan{
+		Subtasks: []Subtask{
+			{ID: "step-1", Description: "first", AgentName: "test-agent"},
+			{ID: "step-2", Description: "second", AgentName: "test-agent", Deps: []string{"step-1"}},
+		},
+	}, nil)
+	if err == nil {
+		t.Fatal("ExecuteWithObserver() error = nil, want failure")
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d results, want 2", len(results))
+	}
+	if results[1].Success || !strings.Contains(results[1].Error, `dependency "step-1" failed`) {
+		t.Fatalf("dependent result = %+v, want dependency failure", results[1])
+	}
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	for _, id := range agent.executedTaskIDs {
+		if id == "step-2" {
+			t.Fatal("dependent subtask executed despite failed dependency")
+		}
+	}
+}
+
 func TestExecuteSubtask_UsesDefaultProfileAndRepo(t *testing.T) {
 	repo := t.TempDir()
 	t.Setenv("AGENTOS_HOME", filepath.Join(t.TempDir(), "agentos-home"))
@@ -622,15 +659,16 @@ func TestSubtaskResult_Defaults(t *testing.T) {
 }
 
 type recordingAgent struct {
-	name          string
-	taskID        string
-	taskRepo      string
-	baseBranch    string
-	profileName   string
-	workspaceRoot string
-	failTasks     map[string]bool
-	delay         time.Duration
-	mu            sync.Mutex
+	name            string
+	taskID          string
+	taskRepo        string
+	baseBranch      string
+	profileName     string
+	workspaceRoot   string
+	failTasks       map[string]bool
+	delay           time.Duration
+	executedTaskIDs []string
+	mu              sync.Mutex
 }
 
 func (a *recordingAgent) Name() string {
@@ -652,6 +690,9 @@ func (a *recordingAgent) Plan(ctx *runtime.RunContext) (*runtime.Plan, error) {
 }
 
 func (a *recordingAgent) Execute(ctx *runtime.RunContext, _ *runtime.Plan) (*runtime.ExecutionResult, error) {
+	a.mu.Lock()
+	a.executedTaskIDs = append(a.executedTaskIDs, ctx.Task.ID)
+	a.mu.Unlock()
 	if a.delay > 0 {
 		time.Sleep(a.delay)
 	}

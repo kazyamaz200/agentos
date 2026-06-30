@@ -331,14 +331,7 @@ func (o *Orchestrator) ExecuteWithObserver(ctx context.Context, plan *TaskPlan, 
 
 	switch o.strategy {
 	case StrategySequential:
-		sharedCtx := ""
-		for i := range plan.Subtasks {
-			result := o.executeObservedSubtask(ctx, &plan.Subtasks[i], sharedCtx, observer)
-			results = append(results, result)
-			if result.Diff != "" {
-				sharedCtx = result.Diff
-			}
-		}
+		results = o.executeSequential(ctx, plan, observer)
 	case StrategyParallel:
 		results = o.executeParallel(ctx, plan, observer)
 	}
@@ -347,6 +340,54 @@ func (o *Orchestrator) ExecuteWithObserver(ctx context.Context, plan *TaskPlan, 
 		return results, err
 	}
 	return results, nil
+}
+
+func (o *Orchestrator) executeSequential(ctx context.Context, plan *TaskPlan, observer SubtaskObserver) []SubtaskResult {
+	results := make([]SubtaskResult, 0, len(plan.Subtasks))
+	subtasksByID := make(map[string]Subtask, len(plan.Subtasks))
+	completed := make(map[string]bool, len(plan.Subtasks))
+	successful := make(map[string]bool, len(plan.Subtasks))
+	sharedCtx := ""
+	for _, subtask := range plan.Subtasks {
+		subtasksByID[subtask.ID] = subtask
+	}
+
+	for i := range plan.Subtasks {
+		subtask := &plan.Subtasks[i]
+		if failed, reason := failedDependency(subtask, subtasksByID, completed, successful); failed {
+			result := SubtaskResult{SubtaskID: subtask.ID, Success: false, Error: reason}
+			results = append(results, result)
+			completed[subtask.ID] = true
+			successful[subtask.ID] = false
+			emitSyntheticCompletion(subtask, &result, observer)
+			continue
+		}
+		if !dependenciesSatisfied(subtask, completed, successful) {
+			result := SubtaskResult{SubtaskID: subtask.ID, Success: false, Error: "dependencies could not be satisfied"}
+			results = append(results, result)
+			completed[subtask.ID] = true
+			successful[subtask.ID] = false
+			emitSyntheticCompletion(subtask, &result, observer)
+			continue
+		}
+
+		result := o.executeObservedSubtask(ctx, subtask, sharedCtx, observer)
+		results = append(results, result)
+		completed[subtask.ID] = true
+		successful[subtask.ID] = result.Success
+		if result.Diff != "" {
+			sharedCtx = result.Diff
+		}
+	}
+	return results
+}
+
+func emitSyntheticCompletion(subtask *Subtask, result *SubtaskResult, observer SubtaskObserver) {
+	if observer == nil {
+		return
+	}
+	now := time.Now().UTC()
+	observer(SubtaskEvent{Type: SubtaskCompleted, Subtask: *subtask, Result: result, Finished: now})
 }
 
 type indexedSubtaskResult struct {
