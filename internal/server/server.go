@@ -116,6 +116,7 @@ func NewServer(port int) *Server {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/github/", s.handleGitHub)
 	mux.HandleFunc("/api/orchestrate/recommend", s.handleOrchestrateRecommend)
+	mux.HandleFunc("/api/orchestrate/from-issue", s.handleOrchestrateFromIssue)
 	mux.HandleFunc("/api/orchestrate", s.handleOrchestrate)
 	mux.HandleFunc("/api/orchestrates", s.handleOrchestrates)
 	mux.HandleFunc("/api/orchestrates/", s.handleOrchestrateDetail)
@@ -482,6 +483,22 @@ type orchestrateGitHubRequest struct {
 	PRTemplate        string `json:"prTemplate,omitempty"`
 }
 
+type orchestrateFromIssueRequest struct {
+	Repo              string   `json:"repo"`
+	BaseBranch        string   `json:"baseBranch"`
+	IssueNumber       int      `json:"issueNumber"`
+	IssueTitle        string   `json:"issueTitle"`
+	IssueBody         string   `json:"issueBody"`
+	IssueURL          string   `json:"issueUrl"`
+	Labels            []string `json:"labels,omitempty"`
+	TriggerID         string   `json:"triggerId,omitempty"`
+	OutputLanguage    string   `json:"outputLanguage,omitempty"`
+	LLMPreset         string   `json:"llmPreset,omitempty"`
+	Agents            []string `json:"agents,omitempty"`
+	Strategy          string   `json:"strategy,omitempty"`
+	CreatePullRequest *bool    `json:"createPullRequest,omitempty"`
+}
+
 type orchestrateRecommendRequest struct {
 	Repo       string `json:"repo"`
 	BaseBranch string `json:"baseBranch"`
@@ -543,6 +560,18 @@ type orchestrationGitHubState struct {
 	Error             string `json:"error,omitempty"`
 	CreateIssue       bool   `json:"createIssue,omitempty"`
 	CreatePullRequest bool   `json:"createPullRequest,omitempty"`
+	SourceIssueURL    string `json:"sourceIssueUrl,omitempty"`
+	SourceIssueNumber int    `json:"sourceIssueNumber,omitempty"`
+	SourceIssueTitle  string `json:"sourceIssueTitle,omitempty"`
+	SourceTriggerID   string `json:"sourceTriggerId,omitempty"`
+}
+
+type orchestrationSourceIssue struct {
+	Repo      string
+	Number    int
+	Title     string
+	URL       string
+	TriggerID string
 }
 
 type orchestrationSubtaskState struct {
@@ -615,6 +644,51 @@ func (s *Server) handleOrchestrate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.startOrchestration(w, r, user, &req, nil)
+}
+
+func (s *Server) handleOrchestrateFromIssue(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	var importReq orchestrateFromIssueRequest
+	if err := json.Unmarshal(body, &importReq); err != nil {
+		http.Error(w, "parse body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	req, source, err := orchestrationRequestFromIssue(&importReq, s.agentReg)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !s.auth.userCanAutomate(user) {
+		s.requireAutomationPermission(w, r, user, "orchestrate.create", "orchestration", req.Repo, "")
+		return
+	}
+	if existing, ok := findDuplicateIssueOrchestration(req.Repo, source); ok {
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(existing) //nolint:errcheck // best-effort response
+		return
+	}
+	s.startOrchestration(w, r, user, req, source)
+}
+
+func (s *Server) startOrchestration(w http.ResponseWriter, r *http.Request, user *authUser, req *orchestrateRequest, source *orchestrationSourceIssue) {
+	if req == nil {
+		http.Error(w, "request is required", http.StatusBadRequest)
+		return
+	}
 	req.Repo = strings.TrimSpace(req.Repo)
 	req.BaseBranch = defaultBaseBranch(req.BaseBranch)
 	req.Strategy = strings.TrimSpace(req.Strategy)
@@ -646,7 +720,7 @@ func (s *Server) handleOrchestrate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	artifactConfig := loadArtifactConfig(repoPath)
-	applyArtifactConfig(&req, artifactConfig)
+	applyArtifactConfig(req, artifactConfig)
 
 	agents := make(map[string]runtime.Agent)
 	for _, name := range req.Agents {
@@ -659,11 +733,12 @@ func (s *Server) handleOrchestrate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := generateID()
-	githubState, err := prepareOrchestrationGitHub(id, &req)
+	githubState, err := prepareOrchestrationGitHub(id, req)
 	if err != nil {
 		http.Error(w, "github: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	githubState = attachSourceIssue(githubState, source)
 
 	now := time.Now().UTC()
 	record := &orchestrationRecord{
@@ -1328,6 +1403,232 @@ func prepareOrchestrationGitHub(id string, req *orchestrateRequest) (*orchestrat
 		CreateIssue:       req.GitHub.CreateIssue,
 		CreatePullRequest: req.GitHub.CreatePullRequest,
 	}, nil
+}
+
+func orchestrationRequestFromIssue(importReq *orchestrateFromIssueRequest, reg *agent.Registry) (*orchestrateRequest, *orchestrationSourceIssue, error) {
+	if importReq == nil {
+		return nil, nil, fmt.Errorf("request is required")
+	}
+	repo := strings.TrimSpace(importReq.Repo)
+	if _, _, full, ok := githubRepoForAPI(repo); ok {
+		repo = full
+	} else {
+		return nil, nil, fmt.Errorf("repo must be a GitHub HTTPS URL or owner/repo")
+	}
+	if importReq.IssueNumber <= 0 {
+		return nil, nil, fmt.Errorf("issueNumber is required")
+	}
+	title := strings.TrimSpace(importReq.IssueTitle)
+	if title == "" {
+		return nil, nil, fmt.Errorf("issueTitle is required")
+	}
+
+	taskText := issueOrchestrationTask(importReq)
+	rec := recommendOrchestration(taskText, nil, reg)
+	controls := issueTriggerControls(importReq.Labels, importReq.IssueBody)
+
+	agents := sanitizeAgentNames(importReq.Agents)
+	if len(agents) == 0 {
+		agents = sanitizeAgentNames(controls.Agents)
+	}
+	if len(agents) == 0 {
+		agents = rec.Agents
+	}
+	strategy := strings.TrimSpace(importReq.Strategy)
+	if strategy == "" {
+		strategy = controls.Strategy
+	}
+	if strategy == "" {
+		strategy = rec.Strategy
+	}
+	createPullRequest := rec.CreatePullRequest
+	if controls.CreatePullRequest != nil {
+		createPullRequest = *controls.CreatePullRequest
+	}
+	if importReq.CreatePullRequest != nil {
+		createPullRequest = *importReq.CreatePullRequest
+	}
+
+	req := &orchestrateRequest{
+		Agents:         agents,
+		Repo:           repo,
+		BaseBranch:     defaultBaseBranch(importReq.BaseBranch),
+		Task:           taskText,
+		Strategy:       strategy,
+		LLMPreset:      strings.TrimSpace(importReq.LLMPreset),
+		OutputLanguage: strings.TrimSpace(importReq.OutputLanguage),
+		GitHub: &orchestrateGitHubRequest{
+			CreatePullRequest: createPullRequest,
+			BranchName:        fmt.Sprintf("agentos/issue-%d", importReq.IssueNumber),
+			PRBase:            defaultBaseBranch(importReq.BaseBranch),
+			PRTitle:           title,
+		},
+	}
+	source := &orchestrationSourceIssue{
+		Repo:      repo,
+		Number:    importReq.IssueNumber,
+		Title:     title,
+		URL:       strings.TrimSpace(importReq.IssueURL),
+		TriggerID: strings.TrimSpace(importReq.TriggerID),
+	}
+	return req, source, nil
+}
+
+type issueTriggerOptions struct {
+	Agents            []string
+	Strategy          string
+	CreatePullRequest *bool
+}
+
+func issueTriggerControls(labels []string, text string) issueTriggerOptions {
+	var opts issueTriggerOptions
+	for _, label := range labels {
+		switch strings.ToLower(strings.TrimSpace(label)) {
+		case "agentos:create-pr":
+			value := true
+			opts.CreatePullRequest = &value
+		case "agentos:report-only":
+			value := false
+			opts.CreatePullRequest = &value
+		case "agentos:parallel":
+			opts.Strategy = "parallel"
+		case "agentos:sequential":
+			opts.Strategy = "sequential"
+		}
+	}
+	if command, ok := parseAgentOSRunCommand(text); ok {
+		if command.Strategy != "" {
+			opts.Strategy = command.Strategy
+		}
+		if len(command.Agents) > 0 {
+			opts.Agents = command.Agents
+		}
+		if command.CreatePullRequest != nil {
+			opts.CreatePullRequest = command.CreatePullRequest
+		}
+	}
+	return opts
+}
+
+func parseAgentOSRunCommand(text string) (issueTriggerOptions, bool) {
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "/agentos run") {
+			continue
+		}
+		var opts issueTriggerOptions
+		for _, field := range strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "/agentos run"))) {
+			key, value, ok := strings.Cut(field, "=")
+			if !ok {
+				continue
+			}
+			switch strings.ToLower(strings.TrimSpace(key)) {
+			case "agents":
+				opts.Agents = sanitizeAgentNames(strings.Split(value, ","))
+			case "strategy":
+				switch strings.ToLower(strings.TrimSpace(value)) {
+				case "parallel", "sequential":
+					opts.Strategy = strings.ToLower(strings.TrimSpace(value))
+				}
+			case "create_pr", "createpullrequest":
+				enabled := strings.EqualFold(value, "true") || value == "1" || strings.EqualFold(value, "yes")
+				opts.CreatePullRequest = &enabled
+			}
+		}
+		return opts, true
+	}
+	return issueTriggerOptions{}, false
+}
+
+func sanitizeAgentNames(values []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, value := range values {
+		name := strings.TrimSpace(value)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	return out
+}
+
+func issueOrchestrationTask(importReq *orchestrateFromIssueRequest) string {
+	if importReq == nil {
+		return ""
+	}
+	labels := sanitizeAgentNames(importReq.Labels)
+	var b strings.Builder
+	fmt.Fprintf(&b, "Address GitHub Issue #%d: %s\n\n", importReq.IssueNumber, strings.TrimSpace(importReq.IssueTitle))
+	if url := strings.TrimSpace(importReq.IssueURL); url != "" {
+		fmt.Fprintf(&b, "Source issue: %s\n\n", url)
+	}
+	body := strings.TrimSpace(importReq.IssueBody)
+	if body != "" {
+		fmt.Fprintf(&b, "Issue body:\n%s\n\n", body)
+	}
+	if len(labels) > 0 {
+		fmt.Fprintf(&b, "Labels: %s\n", strings.Join(labels, ", "))
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func attachSourceIssue(state *orchestrationGitHubState, source *orchestrationSourceIssue) *orchestrationGitHubState {
+	if source == nil {
+		return state
+	}
+	if state == nil {
+		state = &orchestrationGitHubState{Repo: source.Repo}
+	}
+	if state.Repo == "" {
+		state.Repo = source.Repo
+	}
+	state.SourceIssueNumber = source.Number
+	state.SourceIssueTitle = source.Title
+	state.SourceIssueURL = source.URL
+	state.SourceTriggerID = source.TriggerID
+	if state.IssueNumber == 0 && state.IssueURL == "" {
+		state.IssueNumber = source.Number
+		state.IssueTitle = source.Title
+		state.IssueURL = source.URL
+	}
+	return state
+}
+
+func findDuplicateIssueOrchestration(repo string, source *orchestrationSourceIssue) (*orchestrationRecord, bool) {
+	if source == nil {
+		return nil, false
+	}
+	records, err := listOrchestrationRecords()
+	if err != nil {
+		return nil, false
+	}
+	for _, record := range records {
+		if record == nil || record.GitHub == nil {
+			continue
+		}
+		if source.TriggerID != "" && record.GitHub.SourceTriggerID == source.TriggerID {
+			return record, true
+		}
+		if record.GitHub.SourceIssueNumber == source.Number && sameRepo(record.GitHub.Repo, repo) && orchestrationInProgress(record.Status) {
+			return record, true
+		}
+	}
+	return nil, false
+}
+
+func sameRepo(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
+func orchestrationInProgress(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "planning", "running":
+		return true
+	default:
+		return false
+	}
 }
 
 func actorLogin(user *authUser) string {

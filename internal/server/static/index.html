@@ -784,6 +784,7 @@ async function loadGitHub() {
     if (tab === 'checks') query.set('ref', ref);
     const payload = await api('/api/github/' + tab + '?' + query.toString());
     const data = normalizeGitHubPayload(tab, payload);
+    if (tab === 'issues') window.lastGitHubIssues = data;
     div.innerHTML = data.length === 0 ? '<p class="empty">No ' + escape(tab) + ' found.</p>' : githubTable(tab, data);
   } catch(e) {
     div.innerHTML = '<p class="error">Error: ' + escape(e.message) + '</p>';
@@ -810,14 +811,41 @@ function githubTable(tab, data) {
       data.map(p => '<tr><td>#' + escape(p.number) + '</td><td>' + linkOrText(p.html_url, p.title) + '</td><td>' + statusSpan(p.state) + '</td><td>' + escape(p.head || '-') + ' -> ' + escape(p.base || '-') + '</td></tr>').join('') +
       '</tbody></table>';
   }
-  return '<table><thead><tr><th>#</th><th>Title</th><th>State</th><th>Labels</th></tr></thead><tbody>' +
-    data.map(i => '<tr><td>#' + escape(i.number) + '</td><td>' + linkOrText(i.html_url, i.title) + '</td><td>' + statusSpan(i.state) + '</td><td>' + (i.labels||[]).map(l => '<span class="tag">' + escape(l.name) + '</span>').join('') + '</td></tr>').join('') +
+  return '<table><thead><tr><th>#</th><th>Title</th><th>State</th><th>Labels</th><th></th></tr></thead><tbody>' +
+    data.map(i => '<tr><td>#' + escape(i.number) + '</td><td>' + linkOrText(i.html_url, i.title) + '</td><td>' + statusSpan(i.state) + '</td><td>' + (i.labels||[]).map(l => '<span class="tag">' + escape(l.name) + '</span>').join('') + '</td><td><button class="btn btn-secondary" type="button" onclick="runOrchestrateFromIssue(' + escape(i.number) + ')">Run</button></td></tr>').join('') +
     '</tbody></table>';
 }
 
 function linkOrText(url, text) {
   const label = escape(text || '-');
   return url ? '<a href="' + escape(url) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>' : label;
+}
+
+async function runOrchestrateFromIssue(number) {
+  const issues = window.lastGitHubIssues || [];
+  const issue = issues.find(i => Number(i.number) === Number(number));
+  const repo = document.getElementById('ghRepo').value.trim();
+  const ref = document.getElementById('ghRef').value.trim() || 'main';
+  const div = document.getElementById('githubContent');
+  if (!issue || !repo) return;
+  try {
+    const record = await api('/api/orchestrate/from-issue', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        repo: repo,
+        baseBranch: ref,
+        issueNumber: issue.number,
+        issueTitle: issue.title,
+        issueBody: issue.body || '',
+        issueUrl: issue.html_url || '',
+        labels: (issue.labels || []).map(l => l.name || String(l))
+      })
+    });
+    selectOrchestration(record.id);
+  } catch(e) {
+    div.innerHTML = '<p class="error">Run from Issue failed: ' + escape(e.message) + '</p>' + div.innerHTML;
+  }
 }
 
 function formatTime(value) {
