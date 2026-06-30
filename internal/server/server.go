@@ -654,9 +654,8 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 	plan, err := orch.Plan(planCtx, record.Task)
 	if err != nil {
 		if errors.Is(planCtx.Err(), context.Canceled) || errors.Is(runCtx.Err(), context.Canceled) {
-			record.Status = "canceled"
-			record.Error = "canceled"
-			appendOrchestrationEvent(record, "canceled", "", "Orchestration canceled during planning")
+			s.stopCanceledOrchestration(record, "Orchestration canceled during planning")
+			return
 		} else {
 			record.Status = "failed"
 			record.Error = "plan: " + err.Error()
@@ -667,6 +666,9 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 			slog.Warn("save orchestration failed", "id", record.ID, "error", saveErr)
 		}
 		s.auditOrchestrationOutcome(record, auditOutcomeFailure, record.Error)
+		return
+	}
+	if s.stopCanceledOrchestration(record, "Orchestration canceled") {
 		return
 	}
 	appendOrchestrationEvent(record, "planning.finished", "", fmt.Sprintf("Planning finished with %d subtasks", len(plan.Subtasks)))
@@ -683,6 +685,9 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 	observer := func(event orchestrator.SubtaskEvent) {
 		mu.Lock()
 		defer mu.Unlock()
+		if s.isOrchestrationCanceled(record.ID) {
+			return
+		}
 		applySubtaskEvent(record, &event)
 		appendTimelineForSubtaskEvent(record, &event)
 		record.UpdatedAt = time.Now().UTC()
@@ -699,9 +704,8 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 		mu.Lock()
 		defer mu.Unlock()
 		if errors.Is(runCtx.Err(), context.Canceled) {
-			record.Status = "canceled"
-			record.Error = "canceled"
-			appendOrchestrationEvent(record, "canceled", "", "Orchestration canceled")
+			s.stopCanceledOrchestration(record, "Orchestration canceled")
+			return
 		} else {
 			record.Status = "failed"
 			record.Error = "execute: " + err.Error()
@@ -719,16 +723,7 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 	summary := orch.MergeResults(results)
 	mu.Lock()
 	defer mu.Unlock()
-	if s.isOrchestrationCanceled(record.ID) {
-		record.Results = results
-		record.Status = "canceled"
-		record.Error = "canceled"
-		appendOrchestrationEvent(record, "canceled", "", "Orchestration canceled")
-		record.UpdatedAt = time.Now().UTC()
-		if err := saveOrchestrationRecord(record); err != nil {
-			slog.Warn("save orchestration failed", "id", record.ID, "error", err)
-		}
-		s.auditOrchestrationOutcome(record, auditOutcomeFailure, record.Error)
+	if s.stopCanceledOrchestration(record, "Orchestration canceled") {
 		return
 	}
 	record.Results = results
@@ -850,6 +845,25 @@ func (s *Server) isOrchestrationCanceled(id string) bool {
 	s.activeMu.Lock()
 	defer s.activeMu.Unlock()
 	return s.canceledRun[id]
+}
+
+func (s *Server) stopCanceledOrchestration(record *orchestrationRecord, message string) bool {
+	if !s.isOrchestrationCanceled(record.ID) {
+		return false
+	}
+	if latest, err := readOrchestrationRecord(record.ID); err == nil && latest.Status == "canceled" {
+		s.auditOrchestrationOutcome(latest, auditOutcomeFailure, latest.Error)
+		return true
+	}
+	record.Status = "canceled"
+	record.Error = "canceled"
+	appendOrchestrationEvent(record, "canceled", "", message)
+	record.UpdatedAt = time.Now().UTC()
+	if err := saveOrchestrationRecord(record); err != nil {
+		slog.Warn("save orchestration failed", "id", record.ID, "error", err)
+	}
+	s.auditOrchestrationOutcome(record, auditOutcomeFailure, record.Error)
+	return true
 }
 
 func makeSubtaskStates(plan *orchestrator.TaskPlan) []orchestrationSubtaskState {

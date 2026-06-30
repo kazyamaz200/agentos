@@ -1086,3 +1086,50 @@ func TestServer_CancelOrchestration(t *testing.T) {
 		t.Fatalf("updated record = %+v", updated)
 	}
 }
+
+func TestServer_StopCanceledOrchestrationPreservesTerminalRecord(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("AGENTOS_HOME", home)
+	s := NewServer(0)
+
+	id := "run-1234567890abcdef"
+	s.registerActiveOrchestration(id, func() {})
+	if !s.cancelActiveOrchestration(id) {
+		t.Fatal("cancel active orchestration failed")
+	}
+
+	diskRecord := &orchestrationRecord{
+		ID:        id,
+		Status:    "canceled",
+		Error:     "canceled",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+	appendOrchestrationEvent(diskRecord, "cancel.requested", "", "Cancel requested")
+	appendOrchestrationEvent(diskRecord, "canceled", "", "Orchestration canceled")
+	if err := saveOrchestrationRecord(diskRecord); err != nil {
+		t.Fatal(err)
+	}
+
+	staleRecord := &orchestrationRecord{
+		ID:        id,
+		Status:    "running",
+		CreatedAt: diskRecord.CreatedAt,
+		UpdatedAt: diskRecord.CreatedAt,
+	}
+	appendOrchestrationEvent(staleRecord, "planning.finished", "", "Planning finished with 1 subtasks")
+	if !s.stopCanceledOrchestration(staleRecord, "Orchestration canceled") {
+		t.Fatal("stopCanceledOrchestration returned false")
+	}
+
+	updated, err := readOrchestrationRecord(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Status != "canceled" || len(updated.Events) != 2 {
+		t.Fatalf("updated record = %+v", updated)
+	}
+	if updated.Events[0].Type != "cancel.requested" || updated.Events[1].Type != "canceled" {
+		t.Fatalf("events = %+v", updated.Events)
+	}
+}
