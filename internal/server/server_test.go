@@ -1119,6 +1119,82 @@ func TestServer_OrchestrateRecommendEndpoint(t *testing.T) {
 	}
 }
 
+func TestIssueTriggerControls_LabelAndSlashCommand(t *testing.T) {
+	body := `Please handle this.
+
+/agentos run agents=docs,reviewer strategy=parallel create_pr=false`
+	got := issueTriggerControls([]string{"agentos:create-pr"}, body)
+	if got.Strategy != "parallel" {
+		t.Fatalf("Strategy = %q, want parallel", got.Strategy)
+	}
+	if strings.Join(got.Agents, ",") != "docs,reviewer" {
+		t.Fatalf("Agents = %+v, want docs/reviewer", got.Agents)
+	}
+	if got.CreatePullRequest == nil || *got.CreatePullRequest {
+		t.Fatalf("CreatePullRequest = %v, want false", got.CreatePullRequest)
+	}
+}
+
+func TestOrchestrationRequestFromIssue_UsesRecommendationAndSource(t *testing.T) {
+	req, source, err := orchestrationRequestFromIssue(&orchestrateFromIssueRequest{
+		Repo:        "kazyamaz200/agentos",
+		BaseBranch:  "main",
+		IssueNumber: 203,
+		IssueTitle:  "Fix GitHub Actions workflow check failed",
+		IssueBody:   "CI is failing on lint.",
+		IssueURL:    "https://github.com/kazyamaz200/agentos/issues/203",
+		Labels:      []string{"agentos:run", "agentos:create-pr"},
+	}, agent.DefaultRegistry())
+	if err != nil {
+		t.Fatalf("orchestrationRequestFromIssue() error = %v", err)
+	}
+	if source.Number != 203 || source.URL == "" {
+		t.Fatalf("source = %+v", source)
+	}
+	if req.Repo != "kazyamaz200/agentos" || req.BaseBranch != "main" {
+		t.Fatalf("repo/base = %q/%q", req.Repo, req.BaseBranch)
+	}
+	if !strings.Contains(req.Task, "GitHub Issue #203") || !strings.Contains(req.Task, "CI is failing") {
+		t.Fatalf("Task = %q", req.Task)
+	}
+	if strings.Join(req.Agents, ",") != "ci-fixer,reviewer" {
+		t.Fatalf("Agents = %+v, want ci-fixer/reviewer", req.Agents)
+	}
+	if req.GitHub == nil || !req.GitHub.CreatePullRequest || req.GitHub.BranchName != "agentos/issue-203" {
+		t.Fatalf("GitHub = %+v", req.GitHub)
+	}
+}
+
+func TestFindDuplicateIssueOrchestration_ActiveIssueAndTrigger(t *testing.T) {
+	t.Setenv("AGENTOS_HOME", shortTestDir(t))
+	now := time.Now().UTC()
+	record := &orchestrationRecord{
+		ID:         "run-0123456789abcdef",
+		Repo:       "kazyamaz200/agentos",
+		BaseBranch: "main",
+		Task:       "issue task",
+		Agents:     []string{"go-backend"},
+		Strategy:   "sequential",
+		Status:     "running",
+		GitHub: &orchestrationGitHubState{
+			Repo:              "kazyamaz200/agentos",
+			SourceIssueNumber: 203,
+			SourceTriggerID:   "delivery-1",
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := saveOrchestrationRecord(record); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := findDuplicateIssueOrchestration("kazyamaz200/agentos", &orchestrationSourceIssue{Number: 203}); !ok || got.ID != record.ID {
+		t.Fatalf("duplicate by issue = %+v/%v, want %s", got, ok, record.ID)
+	}
+	if got, ok := findDuplicateIssueOrchestration("kazyamaz200/agentos", &orchestrationSourceIssue{Number: 999, TriggerID: "delivery-1"}); !ok || got.ID != record.ID {
+		t.Fatalf("duplicate by trigger = %+v/%v, want %s", got, ok, record.ID)
+	}
+}
+
 func TestParseLLMPresets(t *testing.T) {
 	raw := `[{"id":"staips","name":"STAIPS","provider":"litellm","baseUrl":"http://litellm:4000/","model":"coder","apiKeyEnv":"LITELLM_API_KEY"}]`
 	presets := parseLLMPresets(raw)

@@ -98,6 +98,32 @@ Common presets include:
 Users can apply a recommendation in the New Orchestrate form and still override
 agents, strategy, and artifact choices before starting the run.
 
+## Issue-Triggered Orchestration
+
+The GitHub panel can start an orchestration from an existing GitHub Issue. Load
+repository Issues in the run detail view, then use `Run` next to an Issue. The
+server converts the Issue title, body, URL, and labels into the orchestration
+task, stores the source Issue on the orchestration record, and applies the same
+recommendation logic used by the New Orchestrate form.
+
+Issue labels can adjust launch behavior:
+
+- `agentos:create-pr` enables PR creation.
+- `agentos:report-only` disables PR creation.
+- `agentos:parallel` selects parallel orchestration.
+- `agentos:sequential` selects sequential orchestration.
+
+Issue text can also include a slash command line:
+
+```text
+/agentos run agents=docs,reviewer strategy=parallel create_pr=false
+```
+
+The slash command overrides matching label-derived controls. The server records
+a trigger ID when one is provided and rejects duplicate in-flight runs for the
+same source Issue, which keeps repeated label or command events from starting
+parallel duplicate orchestrations.
+
 ## GitHub Artifacts
 
 New orchestrations can request GitHub artifacts from the Web UI:
