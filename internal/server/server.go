@@ -72,6 +72,7 @@ type Server struct {
 	llmSettings llmSettings
 	activeMu    sync.Mutex
 	activeRuns  map[string]context.CancelFunc
+	canceledRun map[string]bool
 }
 
 // NewServer creates a new Server listening on the given port.
@@ -96,6 +97,7 @@ func NewServer(port int) *Server {
 		auth:        authCfg,
 		llmSettings: llmSettings,
 		activeRuns:  map[string]context.CancelFunc{},
+		canceledRun: map[string]bool{},
 	}
 
 	mux.HandleFunc("/api/auth/session", s.handleAuthSession)
@@ -690,6 +692,9 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 	}
 
 	results, err := orch.ExecuteWithObserver(runCtx, plan, observer)
+	if s.isOrchestrationCanceled(record.ID) && err == nil {
+		err = context.Canceled
+	}
 	if err != nil {
 		mu.Lock()
 		defer mu.Unlock()
@@ -714,6 +719,18 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 	summary := orch.MergeResults(results)
 	mu.Lock()
 	defer mu.Unlock()
+	if s.isOrchestrationCanceled(record.ID) {
+		record.Results = results
+		record.Status = "canceled"
+		record.Error = "canceled"
+		appendOrchestrationEvent(record, "canceled", "", "Orchestration canceled")
+		record.UpdatedAt = time.Now().UTC()
+		if err := saveOrchestrationRecord(record); err != nil {
+			slog.Warn("save orchestration failed", "id", record.ID, "error", err)
+		}
+		s.auditOrchestrationOutcome(record, auditOutcomeFailure, record.Error)
+		return
+	}
 	record.Results = results
 	record.Summary = summary
 	record.Status = "completed"
@@ -790,9 +807,10 @@ func (s *Server) handleOrchestrateCancel(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "orchestration is not active on this server", http.StatusConflict)
 		return
 	}
-	record.Status = "canceling"
-	record.Error = "cancel requested"
+	record.Status = "canceled"
+	record.Error = "canceled"
 	appendOrchestrationEvent(record, "cancel.requested", "", "Cancel requested")
+	appendOrchestrationEvent(record, "canceled", "", "Orchestration canceled")
 	record.UpdatedAt = time.Now().UTC()
 	if err := saveOrchestrationRecord(record); err != nil {
 		http.Error(w, "save orchestration: "+err.Error(), http.StatusInternalServerError)
@@ -811,17 +829,27 @@ func (s *Server) unregisterActiveOrchestration(id string) {
 	s.activeMu.Lock()
 	defer s.activeMu.Unlock()
 	delete(s.activeRuns, id)
+	delete(s.canceledRun, id)
 }
 
 func (s *Server) cancelActiveOrchestration(id string) bool {
 	s.activeMu.Lock()
 	cancel := s.activeRuns[id]
+	if cancel != nil {
+		s.canceledRun[id] = true
+	}
 	s.activeMu.Unlock()
 	if cancel == nil {
 		return false
 	}
 	cancel()
 	return true
+}
+
+func (s *Server) isOrchestrationCanceled(id string) bool {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+	return s.canceledRun[id]
 }
 
 func makeSubtaskStates(plan *orchestrator.TaskPlan) []orchestrationSubtaskState {

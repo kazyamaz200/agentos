@@ -1082,7 +1082,7 @@ func TestServer_CancelOrchestration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Status != "canceling" || len(updated.Events) != 1 || updated.Events[0].Type != "cancel.requested" {
+	if updated.Status != "canceled" || len(updated.Events) != 2 || updated.Events[0].Type != "cancel.requested" || updated.Events[1].Type != "canceled" {
 		t.Fatalf("updated record = %+v", updated)
 	}
 }
