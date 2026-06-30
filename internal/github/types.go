@@ -27,6 +27,14 @@ type Issue struct {
 	Labels    []Label   `json:"labels"`
 }
 
+// IssueComment represents a GitHub issue comment.
+type IssueComment struct {
+	ID        int64     `json:"id"`
+	Body      string    `json:"body"`
+	HTMLURL   string    `json:"html_url"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // Label represents a GitHub label.
 type Label struct {
 	Name string `json:"name"`

@@ -124,6 +124,12 @@ a trigger ID when one is provided and rejects duplicate in-flight runs for the
 same source Issue, which keeps repeated label or command events from starting
 parallel duplicate orchestrations.
 
+For Issue-sourced runs, AgentOS posts a start comment and one final status
+comment back to the source Issue when GitHub write credentials are configured.
+The final comment includes the run status, any PR URL, error text, and summary.
+Set `AGENTOS_PUBLIC_URL` to include a stable AgentOS run link in these comments;
+otherwise the run ID is shown without a public link.
+
 ## GitHub Artifacts
 
 New orchestrations can request GitHub artifacts from the Web UI:

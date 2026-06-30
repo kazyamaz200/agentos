@@ -384,6 +384,47 @@ func TestClient_CreateIssue(t *testing.T) {
 	}
 }
 
+func TestClient_CreateIssueComment(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/repos/owner/repo/issues/7/comments" {
+			t.Errorf("path = %s, want /repos/owner/repo/issues/7/comments", r.URL.Path)
+		}
+		var req CreateIssueCommentRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if req.Body != "AgentOS update" {
+			t.Fatalf("request = %+v", req)
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck // test helper
+			"id":       101,
+			"body":     req.Body,
+			"html_url": "https://github.com/owner/repo/issues/7#issuecomment-101",
+		})
+	}))
+	defer ts.Close()
+
+	c := &Client{
+		BaseURL:   ts.URL,
+		Token:     "test-token",
+		RepoOwner: "owner",
+		RepoName:  "repo",
+		http:      ts.Client(),
+	}
+	comment, err := c.CreateIssueComment(7, CreateIssueCommentRequest{Body: "AgentOS update"})
+	if err != nil {
+		t.Fatalf("CreateIssueComment() error = %v", err)
+	}
+	if comment.ID != 101 || comment.HTMLURL != "https://github.com/owner/repo/issues/7#issuecomment-101" {
+		t.Fatalf("comment = %+v", comment)
+	}
+}
+
 func TestClient_ListPRs(t *testing.T) {
 	t.Parallel()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

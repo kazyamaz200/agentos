@@ -655,14 +655,17 @@ func TestOrchestrationRecordStore_PreservesGitHubArtifacts(t *testing.T) {
 		OutputLanguage: "ja",
 		Status:         "completed",
 		GitHub: &orchestrationGitHubState{
-			Repo:              "owner/repo",
-			BranchName:        "agentos/run-0123456789abcdef",
-			IssueTemplate:     "repository",
-			IssueURL:          "https://github.com/owner/repo/issues/1",
-			IssueNumber:       1,
-			PRTemplate:        "repository",
-			PullRequestURL:    "https://github.com/owner/repo/pull/2",
-			PullRequestNumber: 2,
+			Repo:                  "owner/repo",
+			BranchName:            "agentos/run-0123456789abcdef",
+			IssueTemplate:         "repository",
+			IssueURL:              "https://github.com/owner/repo/issues/1",
+			IssueNumber:           1,
+			PRTemplate:            "repository",
+			PullRequestURL:        "https://github.com/owner/repo/pull/2",
+			PullRequestNumber:     2,
+			SourceIssueNumber:     1,
+			SourceStartCommentURL: "https://github.com/owner/repo/issues/1#issuecomment-10",
+			SourceFinalCommentURL: "https://github.com/owner/repo/issues/1#issuecomment-11",
 		},
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -679,6 +682,9 @@ func TestOrchestrationRecordStore_PreservesGitHubArtifacts(t *testing.T) {
 	}
 	if got.OutputLanguage != "ja" || got.GitHub.IssueTemplate != "repository" || got.GitHub.PRTemplate != "repository" {
 		t.Fatalf("language/templates = %q/%q/%q", got.OutputLanguage, got.GitHub.IssueTemplate, got.GitHub.PRTemplate)
+	}
+	if got.GitHub.SourceStartCommentURL == "" || got.GitHub.SourceFinalCommentURL == "" {
+		t.Fatalf("source comment URLs were not preserved: %+v", got.GitHub)
 	}
 }
 
@@ -1192,6 +1198,37 @@ func TestFindDuplicateIssueOrchestration_ActiveIssueAndTrigger(t *testing.T) {
 	}
 	if got, ok := findDuplicateIssueOrchestration("kazyamaz200/agentos", &orchestrationSourceIssue{Number: 999, TriggerID: "delivery-1"}); !ok || got.ID != record.ID {
 		t.Fatalf("duplicate by trigger = %+v/%v, want %s", got, ok, record.ID)
+	}
+}
+
+func TestSourceIssueCommentBodies(t *testing.T) {
+	t.Setenv("AGENTOS_PUBLIC_URL", "https://agentos.example.com")
+	record := &orchestrationRecord{
+		ID:         "run-0123456789abcdef",
+		Repo:       "owner/repo",
+		BaseBranch: "main",
+		Task:       "Fix CI",
+		Agents:     []string{"ci-fixer", "reviewer"},
+		Strategy:   "parallel",
+		Status:     "completed",
+		Summary:    "CI fixed.",
+		GitHub: &orchestrationGitHubState{
+			Repo:           "owner/repo",
+			PullRequestURL: "https://github.com/owner/repo/pull/2",
+		},
+	}
+	start := sourceIssueStartCommentBody(record)
+	if !strings.Contains(start, "AgentOS orchestration started") ||
+		!strings.Contains(start, "https://agentos.example.com/#orchestrates/run-0123456789abcdef") ||
+		!strings.Contains(start, "ci-fixer, reviewer") {
+		t.Fatalf("start comment = %q", start)
+	}
+	final := sourceIssueFinalCommentBody(record)
+	if !strings.Contains(final, "AgentOS orchestration finished") ||
+		!strings.Contains(final, "Status: completed") ||
+		!strings.Contains(final, "https://github.com/owner/repo/pull/2") ||
+		!strings.Contains(final, "CI fixed.") {
+		t.Fatalf("final comment = %q", final)
 	}
 }
 

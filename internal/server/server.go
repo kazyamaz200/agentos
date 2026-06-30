@@ -546,24 +546,26 @@ type orchestrationEvent struct {
 }
 
 type orchestrationGitHubState struct {
-	Repo              string `json:"repo"`
-	BranchName        string `json:"branchName,omitempty"`
-	IssueTitle        string `json:"issueTitle,omitempty"`
-	IssueTemplate     string `json:"issueTemplate,omitempty"`
-	IssueURL          string `json:"issueUrl,omitempty"`
-	IssueNumber       int    `json:"issueNumber,omitempty"`
-	PRTitle           string `json:"prTitle,omitempty"`
-	PRTemplate        string `json:"prTemplate,omitempty"`
-	PRBase            string `json:"prBase,omitempty"`
-	PullRequestURL    string `json:"pullRequestUrl,omitempty"`
-	PullRequestNumber int    `json:"pullRequestNumber,omitempty"`
-	Error             string `json:"error,omitempty"`
-	CreateIssue       bool   `json:"createIssue,omitempty"`
-	CreatePullRequest bool   `json:"createPullRequest,omitempty"`
-	SourceIssueURL    string `json:"sourceIssueUrl,omitempty"`
-	SourceIssueNumber int    `json:"sourceIssueNumber,omitempty"`
-	SourceIssueTitle  string `json:"sourceIssueTitle,omitempty"`
-	SourceTriggerID   string `json:"sourceTriggerId,omitempty"`
+	Repo                  string `json:"repo"`
+	BranchName            string `json:"branchName,omitempty"`
+	IssueTitle            string `json:"issueTitle,omitempty"`
+	IssueTemplate         string `json:"issueTemplate,omitempty"`
+	IssueURL              string `json:"issueUrl,omitempty"`
+	IssueNumber           int    `json:"issueNumber,omitempty"`
+	PRTitle               string `json:"prTitle,omitempty"`
+	PRTemplate            string `json:"prTemplate,omitempty"`
+	PRBase                string `json:"prBase,omitempty"`
+	PullRequestURL        string `json:"pullRequestUrl,omitempty"`
+	PullRequestNumber     int    `json:"pullRequestNumber,omitempty"`
+	Error                 string `json:"error,omitempty"`
+	CreateIssue           bool   `json:"createIssue,omitempty"`
+	CreatePullRequest     bool   `json:"createPullRequest,omitempty"`
+	SourceIssueURL        string `json:"sourceIssueUrl,omitempty"`
+	SourceIssueNumber     int    `json:"sourceIssueNumber,omitempty"`
+	SourceIssueTitle      string `json:"sourceIssueTitle,omitempty"`
+	SourceTriggerID       string `json:"sourceTriggerId,omitempty"`
+	SourceStartCommentURL string `json:"sourceStartCommentUrl,omitempty"`
+	SourceFinalCommentURL string `json:"sourceFinalCommentUrl,omitempty"`
 }
 
 type orchestrationSourceIssue struct {
@@ -787,6 +789,7 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 	}
 
 	s.createTrackingIssue(record)
+	s.postSourceIssueStartComment(record)
 	appendOrchestrationEvent(record, "planning.started", "", "Planning started")
 
 	planCtx, cancelPlan := context.WithTimeout(runCtx, orchestratePlanTimeout())
@@ -806,6 +809,7 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 			slog.Warn("save orchestration failed", "id", record.ID, "error", saveErr)
 		}
 		s.auditOrchestrationOutcome(record, auditOutcomeFailure, record.Error)
+		s.postSourceIssueFinalComment(record)
 		return
 	}
 	if s.stopCanceledOrchestration(record, "Orchestration canceled") {
@@ -857,6 +861,7 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 			slog.Warn("save orchestration failed", "id", record.ID, "error", saveErr)
 		}
 		s.auditOrchestrationOutcome(record, auditOutcomeFailure, record.Error)
+		s.postSourceIssueFinalComment(record)
 		return
 	}
 
@@ -876,6 +881,7 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 	}
 	s.auditOrchestrationOutcome(record, auditOutcomeSuccess, "")
 	s.createPullRequestForOrchestration(record)
+	s.postSourceIssueFinalComment(record)
 }
 
 func (s *Server) handleOrchestrates(w http.ResponseWriter, r *http.Request) {
@@ -953,6 +959,7 @@ func (s *Server) handleOrchestrateCancel(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "save orchestration: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.postSourceIssueFinalComment(record)
 	cancelRun()
 	_ = json.NewEncoder(w).Encode(record) //nolint:errcheck // best-effort response
 }
@@ -1004,6 +1011,7 @@ func (s *Server) stopCanceledOrchestration(record *orchestrationRecord, message 
 	}
 	if latest, err := readOrchestrationRecord(record.ID); err == nil && latest.Status == "canceled" {
 		s.auditOrchestrationOutcome(latest, auditOutcomeFailure, latest.Error)
+		s.postSourceIssueFinalComment(latest)
 		return true
 	}
 	record.Status = "canceled"
@@ -1014,6 +1022,7 @@ func (s *Server) stopCanceledOrchestration(record *orchestrationRecord, message 
 		slog.Warn("save orchestration failed", "id", record.ID, "error", err)
 	}
 	s.auditOrchestrationOutcome(record, auditOutcomeFailure, record.Error)
+	s.postSourceIssueFinalComment(record)
 	return true
 }
 
@@ -1720,6 +1729,120 @@ func (s *Server) createPullRequestForOrchestration(record *orchestrationRecord) 
 	record.UpdatedAt = time.Now().UTC()
 	_ = saveOrchestrationRecord(record)
 	s.auditGitHubArtifact(record, "github.pull_request.create", auditOutcomeSuccess, pr.HTMLURL)
+}
+
+func (s *Server) postSourceIssueStartComment(record *orchestrationRecord) {
+	if record == nil || record.GitHub == nil || record.GitHub.SourceIssueNumber == 0 || record.GitHub.SourceStartCommentURL != "" {
+		return
+	}
+	comment, err := s.createSourceIssueComment(record, sourceIssueStartCommentBody(record))
+	if err != nil {
+		record.GitHub.Error = "comment source issue: " + err.Error()
+		record.UpdatedAt = time.Now().UTC()
+		_ = saveOrchestrationRecord(record)
+		s.auditGitHubArtifact(record, "github.issue.comment", auditOutcomeFailure, record.GitHub.Error)
+		return
+	}
+	record.GitHub.SourceStartCommentURL = comment.HTMLURL
+	record.GitHub.Error = ""
+	record.UpdatedAt = time.Now().UTC()
+	_ = saveOrchestrationRecord(record)
+	s.auditGitHubArtifact(record, "github.issue.comment", auditOutcomeSuccess, comment.HTMLURL)
+}
+
+func (s *Server) postSourceIssueFinalComment(record *orchestrationRecord) {
+	if record == nil || record.GitHub == nil || record.GitHub.SourceIssueNumber == 0 || record.GitHub.SourceFinalCommentURL != "" {
+		return
+	}
+	if orchestrationInProgress(record.Status) {
+		return
+	}
+	comment, err := s.createSourceIssueComment(record, sourceIssueFinalCommentBody(record))
+	if err != nil {
+		record.GitHub.Error = "comment source issue: " + err.Error()
+		record.UpdatedAt = time.Now().UTC()
+		_ = saveOrchestrationRecord(record)
+		s.auditGitHubArtifact(record, "github.issue.comment", auditOutcomeFailure, record.GitHub.Error)
+		return
+	}
+	record.GitHub.SourceFinalCommentURL = comment.HTMLURL
+	record.GitHub.Error = ""
+	record.UpdatedAt = time.Now().UTC()
+	_ = saveOrchestrationRecord(record)
+	s.auditGitHubArtifact(record, "github.issue.comment", auditOutcomeSuccess, comment.HTMLURL)
+}
+
+func (s *Server) createSourceIssueComment(record *orchestrationRecord, body string) (*agentosgh.IssueComment, error) {
+	if record == nil || record.GitHub == nil {
+		return nil, fmt.Errorf("missing GitHub source issue")
+	}
+	owner, name, _, ok := githubRepoForAPI(record.GitHub.Repo)
+	if !ok {
+		return nil, fmt.Errorf("invalid GitHub repository")
+	}
+	if record.GitHub.SourceIssueNumber <= 0 {
+		return nil, fmt.Errorf("missing source issue number")
+	}
+	client := agentosgh.NewClient(owner, name)
+	return client.CreateIssueComment(record.GitHub.SourceIssueNumber, agentosgh.CreateIssueCommentRequest{Body: body})
+}
+
+func sourceIssueStartCommentBody(record *orchestrationRecord) string {
+	runRef := orchestrationRunReference(record)
+	return strings.TrimSpace(fmt.Sprintf(`AgentOS orchestration started.
+
+- Run: %s
+- Status: %s
+- Repository: %s
+- Base branch: %s
+- Strategy: %s
+- Agents: %s
+
+Task:
+%s`, runRef, record.Status, record.Repo, record.BaseBranch, record.Strategy, strings.Join(record.Agents, ", "), record.Task))
+}
+
+func sourceIssueFinalCommentBody(record *orchestrationRecord) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "AgentOS orchestration finished.\n\n")
+	fmt.Fprintf(&b, "- Run: %s\n", orchestrationRunReference(record))
+	fmt.Fprintf(&b, "- Status: %s\n", strings.TrimSpace(record.Status))
+	if record.GitHub != nil && record.GitHub.PullRequestURL != "" {
+		fmt.Fprintf(&b, "- Pull request: %s\n", record.GitHub.PullRequestURL)
+	}
+	if record.Error != "" {
+		fmt.Fprintf(&b, "- Error: %s\n", record.Error)
+	}
+	if record.Summary != "" {
+		fmt.Fprintf(&b, "\nSummary:\n%s\n", record.Summary)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func orchestrationRunReference(record *orchestrationRecord) string {
+	if record == nil {
+		return ""
+	}
+	base := strings.TrimRight(strings.TrimSpace(os.Getenv("AGENTOS_PUBLIC_URL")), "/")
+	if base == "" {
+		base = publicURLFromOAuthCallback()
+	}
+	if base == "" {
+		return record.ID
+	}
+	return fmt.Sprintf("%s/#orchestrates/%s", base, record.ID)
+}
+
+func publicURLFromOAuthCallback() string {
+	callback := strings.TrimSpace(os.Getenv("GITHUB_OAUTH_CALLBACK_URL"))
+	if callback == "" {
+		return ""
+	}
+	u, err := url.Parse(callback)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 func (s *Server) auditGitHubArtifact(record *orchestrationRecord, action string, outcome auditOutcome, message string) {

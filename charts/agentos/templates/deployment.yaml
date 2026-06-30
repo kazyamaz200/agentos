@@ -76,6 +76,8 @@ spec:
               value: {{ toJson .Values.llm.presets | quote }}
             - name: AGENTOS_HOME
               value: "{{ default "/home/agentos/.agentos" (get $env "AGENTOS_HOME") }}"
+            - name: AGENTOS_PUBLIC_URL
+              value: "{{ get $env "AGENTOS_PUBLIC_URL" }}"
             - name: AGENTOS_ADMIN_USERS
               value: "{{ get $env "AGENTOS_ADMIN_USERS" }}"
             - name: AGENTOS_ORCHESTRATE_SUBTASK_TIMEOUT
