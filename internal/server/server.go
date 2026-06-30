@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -69,6 +70,9 @@ type Server struct {
 	runtimeCfg  *runtime.Config
 	auth        authConfig
 	llmSettings llmSettings
+	activeMu    sync.Mutex
+	activeRuns  map[string]context.CancelFunc
+	canceledRun map[string]bool
 }
 
 // NewServer creates a new Server listening on the given port.
@@ -92,6 +96,8 @@ func NewServer(port int) *Server {
 		runtimeCfg:  &runtime.Config{Verbose: false},
 		auth:        authCfg,
 		llmSettings: llmSettings,
+		activeRuns:  map[string]context.CancelFunc{},
+		canceledRun: map[string]bool{},
 	}
 
 	mux.HandleFunc("/api/auth/session", s.handleAuthSession)
@@ -484,10 +490,18 @@ type orchestrationRecord struct {
 	Plan       *orchestrator.TaskPlan       `json:"plan,omitempty"`
 	Subtasks   []orchestrationSubtaskState  `json:"subtasks,omitempty"`
 	Results    []orchestrator.SubtaskResult `json:"results,omitempty"`
+	Events     []orchestrationEvent         `json:"events,omitempty"`
 	Summary    string                       `json:"summary,omitempty"`
 	GitHub     *orchestrationGitHubState    `json:"github,omitempty"`
 	CreatedAt  time.Time                    `json:"createdAt"`
 	UpdatedAt  time.Time                    `json:"updatedAt"`
+}
+
+type orchestrationEvent struct {
+	Timestamp time.Time `json:"timestamp"`
+	Type      string    `json:"type"`
+	SubtaskID string    `json:"subtaskId,omitempty"`
+	Message   string    `json:"message"`
 }
 
 type orchestrationGitHubState struct {
@@ -603,6 +617,7 @@ func (s *Server) handleOrchestrate(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
+	appendOrchestrationEvent(record, "created", "", "Orchestration created")
 	if record.Repo == "" {
 		record.Repo = "."
 	}
@@ -617,6 +632,11 @@ func (s *Server) handleOrchestrate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string]runtime.Agent, llmClient llm.LLMClient) {
+	runCtx, cancelRun := context.WithCancel(context.Background())
+	s.registerActiveOrchestration(record.ID, cancelRun)
+	defer s.unregisterActiveOrchestration(record.ID)
+	defer cancelRun()
+
 	cfg := &runtime.Config{Verbose: false}
 	orch := orchestrator.NewOrchestrator(llmClient, sandbox.NewLocalSandbox(record.RepoPath), agents, cfg)
 	orch.SetBaseBranch(record.BaseBranch)
@@ -627,13 +647,20 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 	}
 
 	s.createTrackingIssue(record)
+	appendOrchestrationEvent(record, "planning.started", "", "Planning started")
 
-	planCtx, cancelPlan := context.WithTimeout(context.Background(), orchestratePlanTimeout())
+	planCtx, cancelPlan := context.WithTimeout(runCtx, orchestratePlanTimeout())
 	defer cancelPlan()
 	plan, err := orch.Plan(planCtx, record.Task)
 	if err != nil {
-		record.Status = "failed"
-		record.Error = "plan: " + err.Error()
+		if errors.Is(planCtx.Err(), context.Canceled) || errors.Is(runCtx.Err(), context.Canceled) {
+			s.stopCanceledOrchestration(record, "Orchestration canceled during planning")
+			return
+		} else {
+			record.Status = "failed"
+			record.Error = "plan: " + err.Error()
+			appendOrchestrationEvent(record, "planning.failed", "", record.Error)
+		}
 		record.UpdatedAt = time.Now().UTC()
 		if saveErr := saveOrchestrationRecord(record); saveErr != nil {
 			slog.Warn("save orchestration failed", "id", record.ID, "error", saveErr)
@@ -641,6 +668,10 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 		s.auditOrchestrationOutcome(record, auditOutcomeFailure, record.Error)
 		return
 	}
+	if s.stopCanceledOrchestration(record, "Orchestration canceled") {
+		return
+	}
+	appendOrchestrationEvent(record, "planning.finished", "", fmt.Sprintf("Planning finished with %d subtasks", len(plan.Subtasks)))
 	record.Plan = plan
 	record.Subtasks = makeSubtaskStates(plan)
 	record.Status = "running"
@@ -654,19 +685,32 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 	observer := func(event orchestrator.SubtaskEvent) {
 		mu.Lock()
 		defer mu.Unlock()
+		if s.isOrchestrationCanceled(record.ID) {
+			return
+		}
 		applySubtaskEvent(record, &event)
+		appendTimelineForSubtaskEvent(record, &event)
 		record.UpdatedAt = time.Now().UTC()
 		if err := saveOrchestrationRecord(record); err != nil {
 			slog.Warn("save orchestration failed", "id", record.ID, "error", err)
 		}
 	}
 
-	results, err := orch.ExecuteWithObserver(context.Background(), plan, observer)
+	results, err := orch.ExecuteWithObserver(runCtx, plan, observer)
+	if s.isOrchestrationCanceled(record.ID) && err == nil {
+		err = context.Canceled
+	}
 	if err != nil {
 		mu.Lock()
 		defer mu.Unlock()
-		record.Status = "failed"
-		record.Error = "execute: " + err.Error()
+		if errors.Is(runCtx.Err(), context.Canceled) {
+			s.stopCanceledOrchestration(record, "Orchestration canceled")
+			return
+		} else {
+			record.Status = "failed"
+			record.Error = "execute: " + err.Error()
+			appendOrchestrationEvent(record, "execute.failed", "", record.Error)
+		}
 		record.Results = results
 		record.UpdatedAt = time.Now().UTC()
 		if saveErr := saveOrchestrationRecord(record); saveErr != nil {
@@ -679,9 +723,13 @@ func (s *Server) runOrchestration(record *orchestrationRecord, agents map[string
 	summary := orch.MergeResults(results)
 	mu.Lock()
 	defer mu.Unlock()
+	if s.stopCanceledOrchestration(record, "Orchestration canceled") {
+		return
+	}
 	record.Results = results
 	record.Summary = summary
 	record.Status = "completed"
+	appendOrchestrationEvent(record, "completed", "", "Orchestration completed")
 	record.UpdatedAt = time.Now().UTC()
 	if err := saveOrchestrationRecord(record); err != nil {
 		slog.Warn("save orchestration failed", "id", record.ID, "error", err)
@@ -710,7 +758,12 @@ func (s *Server) handleOrchestrates(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleOrchestrateDetail(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	if _, ok := s.requireAuth(w, r); !ok {
+	user, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/cancel") {
+		s.handleOrchestrateCancel(w, r, user)
 		return
 	}
 	if r.Method != http.MethodGet {
@@ -725,6 +778,103 @@ func (s *Server) handleOrchestrateDetail(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(record) //nolint:errcheck // best-effort response
+}
+
+func (s *Server) handleOrchestrateCancel(w http.ResponseWriter, r *http.Request, user *authUser) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	id := filepath.Base(filepath.Dir(r.URL.Path))
+	if !s.requireAutomationPermission(w, r, user, "orchestrate.cancel", "orchestration/"+id, "", id) {
+		return
+	}
+	record, err := readOrchestrationRecord(id)
+	if err != nil {
+		http.Error(w, "orchestration not found: "+id, http.StatusNotFound)
+		return
+	}
+	if record.Status != "planning" && record.Status != "running" {
+		http.Error(w, "orchestration is not running", http.StatusConflict)
+		return
+	}
+	cancelRun, ok := s.prepareCancelActiveOrchestration(id)
+	if !ok {
+		http.Error(w, "orchestration is not active on this server", http.StatusConflict)
+		return
+	}
+	record.Status = "canceled"
+	record.Error = "canceled"
+	appendOrchestrationEvent(record, "cancel.requested", "", "Cancel requested")
+	appendOrchestrationEvent(record, "canceled", "", "Orchestration canceled")
+	record.UpdatedAt = time.Now().UTC()
+	if err := saveOrchestrationRecord(record); err != nil {
+		cancelRun()
+		http.Error(w, "save orchestration: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	cancelRun()
+	_ = json.NewEncoder(w).Encode(record) //nolint:errcheck // best-effort response
+}
+
+func (s *Server) registerActiveOrchestration(id string, cancel context.CancelFunc) {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+	s.activeRuns[id] = cancel
+}
+
+func (s *Server) unregisterActiveOrchestration(id string) {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+	delete(s.activeRuns, id)
+	delete(s.canceledRun, id)
+}
+
+func (s *Server) cancelActiveOrchestration(id string) bool {
+	cancel, ok := s.prepareCancelActiveOrchestration(id)
+	if !ok {
+		return false
+	}
+	cancel()
+	return true
+}
+
+func (s *Server) prepareCancelActiveOrchestration(id string) (context.CancelFunc, bool) {
+	s.activeMu.Lock()
+	cancel := s.activeRuns[id]
+	if cancel != nil {
+		s.canceledRun[id] = true
+	}
+	s.activeMu.Unlock()
+	if cancel == nil {
+		return nil, false
+	}
+	return cancel, true
+}
+
+func (s *Server) isOrchestrationCanceled(id string) bool {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+	return s.canceledRun[id]
+}
+
+func (s *Server) stopCanceledOrchestration(record *orchestrationRecord, message string) bool {
+	if !s.isOrchestrationCanceled(record.ID) {
+		return false
+	}
+	if latest, err := readOrchestrationRecord(record.ID); err == nil && latest.Status == "canceled" {
+		s.auditOrchestrationOutcome(latest, auditOutcomeFailure, latest.Error)
+		return true
+	}
+	record.Status = "canceled"
+	record.Error = "canceled"
+	appendOrchestrationEvent(record, "canceled", "", message)
+	record.UpdatedAt = time.Now().UTC()
+	if err := saveOrchestrationRecord(record); err != nil {
+		slog.Warn("save orchestration failed", "id", record.ID, "error", err)
+	}
+	s.auditOrchestrationOutcome(record, auditOutcomeFailure, record.Error)
+	return true
 }
 
 func makeSubtaskStates(plan *orchestrator.TaskPlan) []orchestrationSubtaskState {
@@ -768,6 +918,34 @@ func applySubtaskEvent(record *orchestrationRecord, event *orchestrator.SubtaskE
 		}
 		return
 	}
+}
+
+func appendTimelineForSubtaskEvent(record *orchestrationRecord, event *orchestrator.SubtaskEvent) {
+	switch event.Type {
+	case orchestrator.SubtaskStarted:
+		appendOrchestrationEvent(record, "subtask.started", event.Subtask.ID, fmt.Sprintf("%s started", event.Subtask.AgentName))
+	case orchestrator.SubtaskCompleted:
+		message := "Subtask completed"
+		if event.Result != nil && !event.Result.Success {
+			message = "Subtask failed"
+			if event.Result.Error != "" {
+				message += ": " + event.Result.Error
+			}
+		}
+		appendOrchestrationEvent(record, "subtask.completed", event.Subtask.ID, message)
+	}
+}
+
+func appendOrchestrationEvent(record *orchestrationRecord, eventType, subtaskID, message string) {
+	if record == nil {
+		return
+	}
+	record.Events = append(record.Events, orchestrationEvent{
+		Timestamp: time.Now().UTC(),
+		Type:      eventType,
+		SubtaskID: subtaskID,
+		Message:   safety.NewRedactor().RedactString(message),
+	})
 }
 
 func orchestrateSubtaskTimeout() time.Duration {
