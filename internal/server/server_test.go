@@ -1011,6 +1011,9 @@ func TestApplySubtaskEvent(t *testing.T) {
 	if len(record.Subtasks) != 1 || record.Subtasks[0].Status != "running" || record.Subtasks[0].StartedAt == nil {
 		t.Fatalf("started state = %+v", record.Subtasks)
 	}
+	if len(record.Events) != 0 {
+		t.Fatalf("applySubtaskEvent should not append timeline directly: %+v", record.Events)
+	}
 
 	finished := started.Add(time.Second)
 	applySubtaskEvent(record, &orchestrator.SubtaskEvent{
@@ -1021,5 +1024,65 @@ func TestApplySubtaskEvent(t *testing.T) {
 	})
 	if record.Subtasks[0].Status != "completed" || record.Subtasks[0].FinishedAt == nil || record.Subtasks[0].Result == nil {
 		t.Fatalf("completed state = %+v", record.Subtasks[0])
+	}
+}
+
+func TestAppendTimelineForSubtaskEvent(t *testing.T) {
+	record := &orchestrationRecord{}
+	appendTimelineForSubtaskEvent(record, &orchestrator.SubtaskEvent{
+		Type:    orchestrator.SubtaskStarted,
+		Subtask: orchestrator.Subtask{ID: "step-1", AgentName: "go-backend"},
+	})
+	appendTimelineForSubtaskEvent(record, &orchestrator.SubtaskEvent{
+		Type:    orchestrator.SubtaskCompleted,
+		Subtask: orchestrator.Subtask{ID: "step-1", AgentName: "go-backend"},
+		Result:  &orchestrator.SubtaskResult{SubtaskID: "step-1", Success: false, Error: "boom"},
+	})
+	if len(record.Events) != 2 {
+		t.Fatalf("events = %+v, want 2", record.Events)
+	}
+	if record.Events[0].Type != "subtask.started" || record.Events[1].Type != "subtask.completed" {
+		t.Fatalf("event types = %+v", record.Events)
+	}
+	if !strings.Contains(record.Events[1].Message, "boom") {
+		t.Fatalf("completion message = %q, want error detail", record.Events[1].Message)
+	}
+}
+
+func TestServer_CancelOrchestration(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("AGENTOS_HOME", home)
+	t.Setenv("AGENTOS_AUTH_REQUIRED", "true")
+	t.Setenv("AGENTOS_SESSION_SECRET", "test-secret")
+	t.Setenv("AGENTOS_ADMIN_USERS", "admin")
+	s := NewServer(0)
+
+	record := &orchestrationRecord{
+		ID:        "run-1234567890abcdef",
+		Status:    "running",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+	if err := saveOrchestrationRecord(record); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.registerActiveOrchestration(record.ID, cancel)
+
+	w := serveRequestAs(s, "POST", "/api/orchestrates/"+record.ID+"/cancel", nil, &authUser{
+		Login:     "admin",
+		ExpiresAt: time.Now().UTC().Add(time.Hour),
+	})
+	assertStatus(t, w.Code, http.StatusOK)
+	if ctx.Err() != context.Canceled {
+		t.Fatalf("context err = %v, want canceled", ctx.Err())
+	}
+	updated, err := readOrchestrationRecord(record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Status != "canceling" || len(updated.Events) != 1 || updated.Events[0].Type != "cancel.requested" {
+		t.Fatalf("updated record = %+v", updated)
 	}
 }

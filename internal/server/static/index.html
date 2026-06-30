@@ -44,6 +44,8 @@ pre{background:#0d1117;padding:12px;border-radius:6px;overflow:auto;font-size:12
 .btn:disabled{opacity:.55;cursor:not-allowed}
 .btn-secondary{background:#21262d;border:1px solid #30363d}
 .btn-secondary:hover{background:#30363d}
+.btn-danger{background:#da3633}
+.btn-danger:hover{background:#f85149}
 .form-group{margin-bottom:12px}
 .form-group label{display:block;font-size:12px;color:#8b949e;margin-bottom:4px}
 .form-group input,.form-group textarea,.form-group select,.search-row input,.search-row select{width:100%;padding:8px 10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:13px;min-height:36px}
@@ -438,6 +440,16 @@ async function refreshCurrentOrchestration() {
   }
 }
 
+async function cancelCurrentOrchestration() {
+  if (!selectedOrchestrateId) return;
+  try {
+    await api('/api/orchestrates/' + encodeURIComponent(selectedOrchestrateId) + '/cancel', { method: 'POST' });
+    await refreshCurrentOrchestration();
+  } catch(e) {
+    alert('Cancel failed: ' + e.message);
+  }
+}
+
 function startOrchestrationPoll() {
   if (orchPoll) clearInterval(orchPoll);
   orchPoll = setInterval(() => {
@@ -466,7 +478,7 @@ function renderOrchestrationDetail() {
     '<div class="card">' +
     '<div class="detail-header"><div><h2>' + escape(r.id) + ' ' + statusSpan(r.status) + '</h2>' +
     '<div class="detail-meta"><span class="repo-pill">' + escape(r.repo || '-') + '</span><span class="repo-pill">' + escape(r.baseBranch || '-') + '</span><span class="repo-pill">' + escape(r.strategy || '-') + '</span><span class="repo-pill">' + escape(r.llmPreset || '-') + '</span></div></div>' +
-    '<button class="btn btn-secondary" onclick="refreshCurrentOrchestration()">Refresh</button></div>' +
+    '<div class="actions">' + ((r.status === 'planning' || r.status === 'running') ? '<button class="btn btn-danger" onclick="cancelCurrentOrchestration()">Cancel</button>' : '') + '<button class="btn btn-secondary" onclick="refreshCurrentOrchestration()">Refresh</button></div></div>' +
     '<p class="muted" style="margin-top:12px">' + escape(r.task || '') + '</p>' +
     renderGitHubArtifacts(r.github) +
     (r.error ? '<p class="error" style="margin-top:10px">' + escape(r.error) + '</p>' : '') +
@@ -517,7 +529,16 @@ function renderDashboard(r) {
   const total = r.plan && r.plan.subtasks ? r.plan.subtasks.length : results.length;
   return '<div class="grid">' +
     statCard('Subtasks', total) + statCard('Passed', passed, '#3fb950') + statCard('Failed', failed, '#f85149') + statCard('Agents', (r.agents || []).length, '#d29922') +
-    '</div><div class="card"><h2>Summary</h2>' + (r.summary ? '<pre>' + escape(r.summary) + '</pre>' : '<p class="empty">Summary will appear after execution completes.</p>') + '</div>';
+    '</div>' + renderTimeline(r) + '<div class="card"><h2>Summary</h2>' + (r.summary ? '<pre>' + escape(r.summary) + '</pre>' : '<p class="empty">Summary will appear after execution completes.</p>') + '</div>';
+}
+
+function renderTimeline(r) {
+  const events = r.events || [];
+  if (events.length === 0) return '<div class="card"><h2>Timeline</h2><p class="empty">Timeline events will appear as the orchestration progresses.</p></div>';
+  const rows = events.slice().reverse().map(e =>
+    '<tr><td>' + escape(formatTime(e.timestamp)) + '</td><td>' + statusSpan(e.type || '-') + '</td><td>' + escape(e.subtaskId || '-') + '</td><td>' + escape(e.message || '') + '</td></tr>'
+  ).join('');
+  return '<div class="card"><h2>Timeline</h2><table><thead><tr><th>Time</th><th>Event</th><th>Subtask</th><th>Message</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
 }
 
 function statCard(label, value, color) {
