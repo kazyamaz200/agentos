@@ -64,7 +64,8 @@ Key packages:
 
 AgentOS v1.0 supports two ways to create agents:
 
-- Built-in registry entries: `go-backend`, `reviewer`, `ci-fixer`, and `docs`.
+- Built-in registry entries: `go-backend`, `reviewer`, `ci-fixer`, `docs`,
+  `security`, `release-manager`, `dependency-updater`, and `qa`.
 - Versioned definitions using `apiVersion: agentos.io/v1`.
 
 `internal/factory/` converts definition YAML into runnable agents by wiring the

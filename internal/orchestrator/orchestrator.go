@@ -258,6 +258,18 @@ func enrichSubtasks(plan *TaskPlan, parentTask string) {
 		case "reviewer":
 			plan.Subtasks[i].Description = appendContext(plan.Subtasks[i].Description, parentTask,
 				"Concrete reviewer requirements: review the final diff against the parent task; flag correctness, test coverage, security, maintainability, release-readiness, over-engineering, and convention-breaking findings with severity and file references.")
+		case "security":
+			plan.Subtasks[i].Description = appendContext(plan.Subtasks[i].Description, parentTask,
+				"Concrete security requirements: inspect dependency, auth/session, secret-handling, permission, and security-sensitive code paths; prefer focused defensive fixes; include tests or manual verification notes; keep go test ./... and go vet ./... passing when code changes.")
+		case "release-manager":
+			plan.Subtasks[i].Description = appendContext(plan.Subtasks[i].Description, parentTask,
+				"Concrete release-manager requirements: inspect existing CHANGELOG.md, release notes, versioning, and chart conventions; update release artifacts only when in scope; record release readiness, validation, deployment, and rollback notes.")
+		case "dependency-updater":
+			plan.Subtasks[i].Description = appendContext(plan.Subtasks[i].Description, parentTask,
+				"Concrete dependency-updater requirements: inspect manifests, lockfiles, Go toolchain, and workflow compatibility first; prefer narrow requested updates; keep go.mod/go.sum synchronized; run go mod tidy and go test ./... when Go dependencies change.")
+		case "qa":
+			plan.Subtasks[i].Description = appendContext(plan.Subtasks[i].Description, parentTask,
+				"Concrete qa requirements: inspect existing test layout and verification docs; add focused regression, scenario, or smoke coverage for changed behavior; document manual verification steps when automation is incomplete; keep go test ./... passing.")
 		default:
 			plan.Subtasks[i].Description = appendContext(plan.Subtasks[i].Description, parentTask, "")
 		}
@@ -300,8 +312,10 @@ func (o *Orchestrator) fallbackPlan(taskDesc string) *TaskPlan {
 	add("step-2", "docs", fmt.Sprintf("Update README.md or docs/ for the requested changes. Inspect existing documentation style first. Include practical startup, configuration, endpoint, testing, deployment, and troubleshooting details where relevant. Parent task:\n\n%s", taskDesc), nil)
 	ciDeps := dependenciesForAvailable(available, "go-backend")
 	add("step-3", "ci-fixer", fmt.Sprintf("Add or fix Go tests and GitHub Actions workflow so go test ./... succeeds for the implementation requested by the parent task. Inspect existing workflow conventions first and prefer checkout/setup-go with cache-aware Go setup plus explicit go test and go vet steps. Parent task:\n\n%s", taskDesc), ciDeps)
-	reviewerDeps := dependenciesForAvailable(available, "go-backend", "docs", "ci-fixer")
-	add("step-4", "reviewer", fmt.Sprintf("Review the final diff for correctness, tests, security, maintainability, release readiness, and convention preservation. Flag over-engineered or convention-breaking changes with severity and file references. Parent task:\n\n%s", taskDesc), reviewerDeps)
+	add("step-4", "security", fmt.Sprintf("Review and fix security-sensitive aspects of the requested change. Inspect dependencies, auth/session handling, secrets, permissions, and security-relevant configuration. Add tests or manual verification notes where useful. Parent task:\n\n%s", taskDesc), dependenciesForAvailable(available, "go-backend"))
+	add("step-5", "qa", fmt.Sprintf("Add focused regression, scenario, or smoke coverage for the requested change. Preserve existing test conventions and document manual verification steps when automation is incomplete. Parent task:\n\n%s", taskDesc), dependenciesForAvailable(available, "go-backend"))
+	reviewerDeps := dependenciesForAvailable(available, "go-backend", "docs", "ci-fixer", "security", "qa")
+	add("step-6", "reviewer", fmt.Sprintf("Review the final diff for correctness, tests, security, maintainability, release readiness, and convention preservation. Flag over-engineered or convention-breaking changes with severity and file references. Parent task:\n\n%s", taskDesc), reviewerDeps)
 
 	if len(subtasks) == 0 {
 		for i, info := range o.agentDefs {
@@ -352,6 +366,38 @@ func builtInAgentInfo(name, fallbackDescription string) agentInfo {
 			"Review tests, security-sensitive behavior, maintainability, and release readiness with severity and file references.",
 		}
 		info.outputExpectations = []string{"Findings include severity and file references where applicable.", "Review states validation and release-readiness risk."}
+	case "security":
+		info.description = "Security agent for dependencies, auth/session handling, secrets, and security-sensitive diffs"
+		info.architectureGuidance = []string{
+			"Inspect authentication, authorization, session, secret-handling, dependency, and CI security conventions before proposing changes.",
+			"Prefer small defensive fixes, safer defaults, and standard library or existing dependency patterns over broad rewrites.",
+			"Document residual risk and validation scope when a finding cannot be fully fixed in the current task.",
+		}
+		info.outputExpectations = []string{"Security-sensitive changes include tests or manual verification notes.", "Dependency or configuration findings identify the affected package, file, workflow, or setting.", "go test ./... and go vet ./... pass when code is changed."}
+	case "release-manager":
+		info.description = "Release manager agent for changelogs, release notes, release checklists, and readiness validation"
+		info.architectureGuidance = []string{
+			"Inspect existing changelog, release note, versioning, and Helm chart conventions before editing release artifacts.",
+			"Keep version changes explicit and avoid publishing or tagging releases unless the task asks for it.",
+			"Summarize release readiness, known gaps, and deployment or rollback considerations.",
+		}
+		info.outputExpectations = []string{"CHANGELOG.md or release documentation is updated when release notes are requested.", "Version and chart changes are consistent when release packaging is in scope.", "Release checklist items are concrete and traceable to validation commands or manual checks."}
+	case "dependency-updater":
+		info.description = "Dependency updater agent for Go modules, package locks, and GitHub Actions versions"
+		info.architectureGuidance = []string{
+			"Inspect existing dependency managers, lockfiles, toolchain versions, and CI compatibility before updating versions.",
+			"Prefer narrow updates requested by the task; avoid broad upgrades unless the task calls for them.",
+			"Keep generated files such as go.sum or lockfiles consistent with the manifest that changed.",
+		}
+		info.outputExpectations = []string{"Manifests and lockfiles remain synchronized after updates.", "go mod tidy and go test ./... pass for Go dependency work.", "Compatibility or breaking-change notes are included for major or security-sensitive upgrades."}
+	case "qa":
+		info.description = "QA agent for scenario tests, smoke checks, regression coverage, and manual verification notes"
+		info.architectureGuidance = []string{
+			"Inspect existing test layout, fixtures, and documented verification workflows before adding new checks.",
+			"Prefer focused regression and smoke coverage that exercises user-visible behavior changed by the task.",
+			"Record manual verification steps when behavior cannot be fully automated.",
+		}
+		info.outputExpectations = []string{"New or updated tests fail without the intended behavior and pass with it.", "go test ./... passes when Go code or tests are in scope.", "Manual verification notes include concrete commands, URLs, or scenarios."}
 	}
 	return info
 }
@@ -361,7 +407,9 @@ func dependenciesForAvailable(available map[string]bool, agents ...string) []str
 		"go-backend": "step-1",
 		"docs":       "step-2",
 		"ci-fixer":   "step-3",
-		"reviewer":   "step-4",
+		"security":   "step-4",
+		"qa":         "step-5",
+		"reviewer":   "step-6",
 	}
 	var deps []string
 	for _, agentName := range agents {
@@ -683,6 +731,28 @@ func subtaskProfile(agentName string) profile.Profile {
 		prof.Commands.Lint = ""
 		prof.Limits.MaxRetries = 1
 		prof.Limits.MaxIterations = 2
+	case "security":
+		prof.Role = "Security review and remediation agent"
+		prof.Tools.Allow = []string{"read_file", "write_file", "search", "shell", "git", "test"}
+		prof.Commands.Test = "go test ./..."
+		prof.Commands.Lint = "go vet ./..."
+	case "release-manager":
+		prof.Role = "Release preparation agent"
+		prof.Tools.Allow = []string{"read_file", "write_file", "search", "shell", "git"}
+		prof.Commands.Test = ""
+		prof.Commands.Lint = ""
+		prof.Limits.MaxRetries = 1
+		prof.Limits.MaxIterations = 4
+	case "dependency-updater":
+		prof.Role = "Dependency update agent"
+		prof.Tools.Allow = []string{"read_file", "write_file", "search", "shell", "git", "test"}
+		prof.Commands.Test = "go test ./..."
+		prof.Commands.Lint = "go vet ./..."
+	case "qa":
+		prof.Role = "QA and verification agent"
+		prof.Tools.Allow = []string{"read_file", "write_file", "search", "shell", "git", "test"}
+		prof.Commands.Test = "go test ./..."
+		prof.Commands.Lint = ""
 	}
 
 	return prof

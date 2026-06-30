@@ -53,6 +53,10 @@ guidance:
 - `profiles/reviewer.yaml` — Code review agent
 - `profiles/ci_fixer.yaml` — CI configuration fix agent
 - `profiles/docs.yaml` — Documentation agent
+- `profiles/security.yaml` — Security review and remediation agent
+- `profiles/release_manager.yaml` — Release preparation agent
+- `profiles/dependency_updater.yaml` — Dependency update agent
+- `profiles/qa.yaml` — QA and verification agent
 
 Built-in profiles include convention-aware guidance. Agents should inspect the
 target repository first, preserve clear local structure, and only introduce new

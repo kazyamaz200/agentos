@@ -1,0 +1,33 @@
+apiVersion: agentos.io/v1
+kind: Agent
+metadata:
+  name: qa
+  labels:
+    role: qa
+spec:
+  llm:
+    model: coder
+    temperature: 0.2
+    maxTokens: 8192
+  tools:
+    allow:
+      - read_file
+      - write_file
+      - search
+      - shell
+      - git
+      - test
+  commands:
+    test: go test ./...
+  limits:
+    maxRetries: 2
+    maxIterations: 6
+  guidance:
+    architecture:
+      - Inspect existing test layout, fixtures, and documented verification workflows before adding new checks.
+      - Prefer focused regression and smoke coverage that exercises user-visible behavior changed by the task.
+      - Record manual verification steps when behavior cannot be fully automated.
+    outputExpectations:
+      - New or updated tests fail without the intended behavior and pass with it.
+      - go test ./... passes when Go code or tests are in scope.
+      - Manual verification notes include concrete commands, URLs, or scenarios.

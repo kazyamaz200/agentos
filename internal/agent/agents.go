@@ -104,5 +104,85 @@ func DefaultRegistry() *Registry {
 		return NewBaseAgent("docs", llmClient)
 	})
 
+	r.MustRegister(&Info{
+		Name:          "security",
+		Description:   "Security agent — reviews dependencies, auth/session handling, secrets, and security-sensitive diffs",
+		Version:       "1.0.0",
+		Author:        "AgentOS",
+		RequiredTools: []string{"read_file", "write_file", "search", "shell", "git", "test"},
+		ArchitectureGuidance: []string{
+			"Inspect authentication, authorization, session, secret-handling, dependency, and CI security conventions before proposing changes.",
+			"Prefer small defensive fixes, safer defaults, and standard library or existing dependency patterns over broad rewrites.",
+			"Document residual risk and validation scope when a finding cannot be fully fixed in the current task.",
+		},
+		OutputExpectations: []string{
+			"Security-sensitive changes include tests or explicit manual verification notes.",
+			"Dependency or configuration findings identify the affected package, file, workflow, or setting.",
+			"go test ./... and go vet ./... pass when code is changed.",
+		},
+	}, func(llmClient llm.LLMClient) runtime.Agent {
+		return NewBaseAgent("security", llmClient)
+	})
+
+	r.MustRegister(&Info{
+		Name:          "release-manager",
+		Description:   "Release manager agent — prepares changelogs, version notes, release checklists, and readiness validation",
+		Version:       "1.0.0",
+		Author:        "AgentOS",
+		RequiredTools: []string{"read_file", "write_file", "search", "shell", "git"},
+		ArchitectureGuidance: []string{
+			"Inspect existing changelog, release note, versioning, and Helm chart conventions before editing release artifacts.",
+			"Keep version changes explicit and avoid publishing or tagging releases unless the task asks for it.",
+			"Summarize release readiness, known gaps, and deployment or rollback considerations.",
+		},
+		OutputExpectations: []string{
+			"CHANGELOG.md or release documentation is updated when release notes are requested.",
+			"Version and chart changes are consistent when release packaging is in scope.",
+			"Release checklist items are concrete and traceable to validation commands or manual checks.",
+		},
+	}, func(llmClient llm.LLMClient) runtime.Agent {
+		return NewBaseAgent("release-manager", llmClient)
+	})
+
+	r.MustRegister(&Info{
+		Name:          "dependency-updater",
+		Description:   "Dependency updater agent — updates Go modules, package locks, and GitHub Actions versions with compatibility checks",
+		Version:       "1.0.0",
+		Author:        "AgentOS",
+		RequiredTools: []string{"read_file", "write_file", "search", "shell", "git", "test"},
+		ArchitectureGuidance: []string{
+			"Inspect existing dependency managers, lockfiles, toolchain versions, and CI compatibility before updating versions.",
+			"Prefer narrow updates requested by the task; avoid broad upgrades unless the task calls for them.",
+			"Keep generated files such as go.sum or lockfiles consistent with the manifest that changed.",
+		},
+		OutputExpectations: []string{
+			"Manifests and lockfiles remain synchronized after updates.",
+			"go mod tidy and go test ./... pass for Go dependency work.",
+			"Compatibility or breaking-change notes are included when versions move across major or security-sensitive boundaries.",
+		},
+	}, func(llmClient llm.LLMClient) runtime.Agent {
+		return NewBaseAgent("dependency-updater", llmClient)
+	})
+
+	r.MustRegister(&Info{
+		Name:          "qa",
+		Description:   "QA agent — adds scenario tests, smoke checks, regression coverage, and manual verification notes",
+		Version:       "1.0.0",
+		Author:        "AgentOS",
+		RequiredTools: []string{"read_file", "write_file", "search", "shell", "git", "test"},
+		ArchitectureGuidance: []string{
+			"Inspect existing test layout, fixtures, and documented verification workflows before adding new checks.",
+			"Prefer focused regression and smoke coverage that exercises user-visible behavior changed by the task.",
+			"Record manual verification steps when behavior cannot be fully automated.",
+		},
+		OutputExpectations: []string{
+			"New or updated tests fail without the intended behavior and pass with it.",
+			"go test ./... passes when Go code or tests are in scope.",
+			"Manual verification notes include concrete commands, URLs, or scenarios.",
+		},
+	}, func(llmClient llm.LLMClient) runtime.Agent {
+		return NewBaseAgent("qa", llmClient)
+	})
+
 	return r
 }

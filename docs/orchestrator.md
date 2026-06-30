@@ -91,12 +91,26 @@ Common presets include:
 - `ops`
 - `docs`
 - `security`
+- `release`
 - `dependency`
+- `qa`
 - `reporting`
 - `bugfix`
 
 Users can apply a recommendation in the New Orchestrate form and still override
 agents, strategy, and artifact choices before starting the run.
+
+Built-in agent recommendations now include specialized repository workflow
+agents:
+
+- `security` for dependency, auth/session, secret-handling, and
+  security-sensitive changes.
+- `release-manager` for changelogs, release notes, version readiness, and
+  deployment checklist work.
+- `dependency-updater` for Go module, lockfile, and GitHub Actions version
+  updates.
+- `qa` for regression tests, smoke checks, scenario coverage, and manual
+  verification notes.
 
 ## Issue-Triggered Orchestration
 

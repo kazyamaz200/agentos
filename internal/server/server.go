@@ -2215,7 +2215,9 @@ func classifyOrchestrationTask(text string) (preset string, confidence float64, 
 		keywords   []string
 	}{
 		{"security", 0.88, "Security-related terms were detected.", []string{"security", "vulnerability", "cve", "secret", "xss", "csrf", "sql injection", "permission", "authz"}},
+		{"release", 0.87, "Release preparation terms were detected.", []string{"release", "changelog", "version bump", "release tag", "release notes", "rollback"}},
 		{"ci-fix", 0.86, "CI or workflow failure terms were detected.", []string{"github actions", "continuous integration", "workflow", "check failed", "failing test", "lint", "build failure"}},
+		{"qa", 0.85, "QA or verification terms were detected.", []string{"qa", "quality assurance", "smoke test", "scenario test", "regression test", "manual verification"}},
 		{"ops", 0.84, "Docker, Helm, Kubernetes, or deployment terms were detected.", []string{"docker", "helm", "kubernetes", "k8s", "deployment", "ingress", "container", "cluster", "ops"}},
 		{"frontend", 0.82, "Frontend UI terms or frontend repository files were detected.", []string{"frontend", "react", "tailwind", "css", "ui", "responsive", "browser", "vite"}},
 		{"docs", 0.80, "Documentation terms were detected.", []string{"docs", "documentation", "readme", "guide", "manual", "changelog"}},
@@ -2236,13 +2238,15 @@ func classifyOrchestrationTask(text string) (preset string, confidence float64, 
 
 func recommendAgentsForPreset(preset string, registry *agent.Registry) []string {
 	candidates := map[string][]string{
-		"security":   {"go-backend", "reviewer"},
+		"security":   {"security", "reviewer"},
 		"ci-fix":     {"ci-fixer", "reviewer"},
 		"ops":        {"go-backend", "reviewer"},
 		"frontend":   {"go-backend", "reviewer"},
 		"docs":       {"docs", "reviewer"},
-		"dependency": {"go-backend", "ci-fixer", "reviewer"},
+		"dependency": {"dependency-updater", "ci-fixer", "reviewer"},
 		"reporting":  {"docs", "reviewer"},
+		"release":    {"release-manager", "docs", "qa", "reviewer"},
+		"qa":         {"qa", "reviewer"},
 		"backend":    {"go-backend", "reviewer"},
 		"bugfix":     {"go-backend", "reviewer"},
 		"general":    {"go-backend", "reviewer"},
@@ -2280,7 +2284,7 @@ func recommendCreatePullRequest(preset string) bool {
 
 func recommendApprovalForPreset(preset string) bool {
 	switch preset {
-	case "security", "ops", "dependency":
+	case "security", "ops", "dependency", "release":
 		return true
 	default:
 		return false

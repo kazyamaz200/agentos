@@ -176,7 +176,13 @@ func TestPlan_IncludesAgentConventionGuidanceInPlannerPrompt(t *testing.T) {
 	o := NewOrchestrator(
 		mock,
 		sandbox.NewLocalSandbox(t.TempDir()),
-		map[string]runtime.Agent{"go-backend": &recordingAgent{name: "go-backend"}},
+		map[string]runtime.Agent{
+			"go-backend":         &recordingAgent{name: "go-backend"},
+			"security":           &recordingAgent{name: "security"},
+			"release-manager":    &recordingAgent{name: "release-manager"},
+			"dependency-updater": &recordingAgent{name: "dependency-updater"},
+			"qa":                 &recordingAgent{name: "qa"},
+		},
 		&runtime.Config{},
 	)
 
@@ -188,10 +194,52 @@ func TestPlan_IncludesAgentConventionGuidanceInPlannerPrompt(t *testing.T) {
 		t.Fatalf("got %d LLM requests, want 1", len(mock.Requests))
 	}
 	userPrompt := mock.Requests[0].Messages[1].Content
-	for _, want := range []string{"Architecture/conventions", "cmd/", "internal/", "Output expectations", "go vet ./..."} {
+	for _, want := range []string{
+		"Architecture/conventions",
+		"cmd/",
+		"internal/",
+		"Output expectations",
+		"go vet ./...",
+		"security",
+		"release-manager",
+		"dependency-updater",
+		"qa",
+	} {
 		if !strings.Contains(userPrompt, want) {
 			t.Fatalf("planner prompt missing %q:\n%s", want, userPrompt)
 		}
+	}
+}
+
+func TestApplyDefaultQualityGate_SpecializedBuiltIns(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		agent string
+		file  string
+	}{
+		{"security", "SECURITY.md"},
+		{"release-manager", "CHANGELOG.md"},
+		{"dependency-updater", "go.mod"},
+		{"qa", "docs/testing.md"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.agent, func(t *testing.T) {
+			subtask := &Subtask{AgentName: tt.agent, Description: "exercise specialized agent"}
+			applyDefaultQualityGate(subtask)
+			if subtask.QualityGate == nil {
+				t.Fatalf("%s missing quality gate", tt.agent)
+			}
+			found := false
+			for _, file := range subtask.QualityGate.RequiredFiles {
+				if file == tt.file {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("%s required files = %+v, want %q", tt.agent, subtask.QualityGate.RequiredFiles, tt.file)
+			}
+		})
 	}
 }
 
