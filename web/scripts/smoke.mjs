@@ -1,36 +1,8 @@
-import { spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright'
+import { preview } from 'vite'
 
 const port = 4173
-const preview = spawn('npm', ['run', 'preview', '--', '--port', String(port)], {
-  stdio: ['ignore', 'pipe', 'pipe'],
-})
-
-let output = ''
-preview.stdout.on('data', (chunk) => {
-  output += chunk.toString()
-})
-preview.stderr.on('data', (chunk) => {
-  output += chunk.toString()
-})
-
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-async function waitForPreview() {
-  for (let i = 0; i < 60; i += 1) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/`)
-      if (res.ok) return
-    } catch {
-      // keep waiting
-    }
-    await wait(500)
-  }
-  throw new Error(`vite preview did not start:\n${output}`)
-}
 
 async function checkViewport(browser, name, width, height) {
   const page = await browser.newPage({ viewport: { width, height } })
@@ -43,13 +15,22 @@ async function checkViewport(browser, name, width, height) {
   await page.close()
 }
 
+let server
+let browser
 try {
   await mkdir('../tmp', { recursive: true })
-  await waitForPreview()
-  const browser = await chromium.launch()
+  server = await preview({ preview: { host: '127.0.0.1', port, strictPort: true } })
+  browser = await chromium.launch()
   await checkViewport(browser, 'mobile', 390, 844)
   await checkViewport(browser, 'desktop', 1440, 1000)
-  await browser.close()
 } finally {
-  preview.kill('SIGTERM')
+  if (browser) await browser.close()
+  await new Promise((resolve, reject) => {
+    const httpServer = server?.httpServer
+    if (!httpServer) {
+      resolve()
+      return
+    }
+    httpServer.close((err) => (err ? reject(err) : resolve()))
+  })
 }
