@@ -70,6 +70,7 @@ func (t *ShellTool) Run(ctx context.Context, input ToolInput) ToolOutput {
 
 	//nolint:gosec // Shell intentionally used for pipe/redirect support; security enforced by CommandPolicy
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	configureCommandCancel(cmd)
 	if t.WorkDir != "" {
 		cmd.Dir = t.WorkDir
 	}
