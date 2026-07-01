@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v1.3.0] - 2026-07-01
+
 ### Added
 - Added built-in `analyst` and `reporter` agents for investigation workflows,
   structured reports, evidence provenance, and no-data reporting expectations.
@@ -25,6 +27,15 @@
 - Fixed multi-arch Docker image builds by running the frontend build on the
   BuildKit build platform and cross-compiling the Go binary for each target
   architecture.
+
+### Notes
+- Scheduled operations run in-process with the Web server. Keep persistent
+  storage enabled for schedules, notification history, orchestration records,
+  repository memory, and guidelines.
+- Webhook delivery for schedule notifications is outbound-only. GitHub-to-
+  AgentOS webhook delivery remains optional for issue-triggered workflows.
+- Helm chart `version`, `appVersion`, and default `image.tag` are aligned to
+  `v1.3.0`.
 
 ## [v1.2.0] - 2026-07-01
 

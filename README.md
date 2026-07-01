@@ -209,9 +209,7 @@ pr_body.md        # Pull request body draft
 - [Pre-merge Verification](docs/pre-merge-verification.md) — PR image checks with registry and BuildKit
 - [Architecture](docs/architecture.md) — System architecture overview
 - [Configuration](docs/configuration.md) — LiteLLM, Qdrant, Docker, MCP, templates
-- [Upgrade to v1.0](docs/upgrade-v1.md) — Migration notes for v0.x users
-- [Upgrade to v1.1](docs/upgrade-v1.1.md) — GitHub automation, quality gates, and approval changes
-- [Upgrade to v1.2](docs/upgrade-v1.2.md) — Agent expansion, repository context, and React Web UI migration
+- [Upgrade to v1.3](docs/upgrade-v1.3.md) — Scheduled operations, reporting, notifications, and ops agents
 - [Profiles](docs/profiles.md) — Profile YAML schema reference
 - [Agent Definitions](docs/agent-definitions.md) — Versioned Agent YAML format (agentos.io/v1)
 - [Repository Agents](docs/repository-agents.md) — Custom `.agentos/agents/*.yaml` profiles for target repositories
@@ -227,7 +225,7 @@ pr_body.md        # Pull request body draft
 - [Guidelines](docs/guidelines.md) — Coding guidelines management
 - [MCP](docs/mcp.md) — Model Context Protocol integration
 - [API](docs/api.md) — REST API reference for web UI
-- [React Web UI Migration](docs/webui-react-tailwind-migration.md) — v1.2 Web UI implementation notes
+- [React Web UI Migration](docs/webui-react-tailwind-migration.md) — Web UI implementation notes
 
 ## Environment Variables
 
@@ -270,7 +268,7 @@ publish a new immutable chart release.
 - [x] Built-in maintenance and reporting workflow templates
 - [x] Outcome notifications for scheduled orchestrations
 
-### v1.2 — Agent Expansion & Repository Context
+### Previous Release — Agent Expansion & Repository Context
 - [x] Expanded built-in agent registry for broader repository workflows
 - [x] Convention-aware built-in agent guidance and specialist routing
 - [x] Repository-defined custom agent profiles
@@ -289,45 +287,16 @@ publish a new immutable chart release.
 - [x] RBAC checks, audit logging, and centralized secret redaction
 - [x] Live orchestration progress, timeline, cancellation, and recommendations
 
-### v1.0 — Foundation
-- [x] Runtime Agent interface (Plan, Execute, Review) with lifecycle hooks
-- [x] Standardized tool interface with Description, lifecycle, and validation
-- [x] Agent plugin registry with built-in agents (go-backend, frontend, reviewer, ci-fixer, docs, security, release-manager, dependency-updater, qa, docker, helm, kubernetes, devops, analyst, reporter)
-- [x] Structured event bus with typed events and file store persistence
-- [x] Pluggable memory layer (VectorStore, JSONStore)
-- [x] Sandbox interface (local backend; Docker backend stub)
-- [x] Versioned Agent Definition schema (apiVersion: agentos.io/v1)
-- [x] Agent Factory: Definition → Runnable Agent
-- [x] Multi-agent orchestration (sequential/parallel)
-
-### v0.5 — Shipped
-- [x] Agent Factory (create agents from templates)
-- [x] Profile-based agent generation
-- [x] Multi-agent orchestration (sequential/parallel)
-- [x] Agent template system with YAML definitions
-
-### v0.4 — Shipped
-- [x] MCP client (JSON-RPC stdio) with tool listing and calling
-- [x] MCP tool adapter → Tool registry integration
-- [ ] Docker sandbox for isolated execution
-- [x] Web UI with dashboard, run viewer, and search
-
-### v0.3 — Shipped
-- [x] Vector store interface (local JSON + Qdrant)
-- [x] Embedding generation via LiteLLM
-- [x] Past PR search via vector search
-- [x] Coding guideline retrieval with semantic search
-- [x] Agent memory with save/search/clear
-- [x] Unified search command
-
-### v0.2 — Shipped
-- [x] GitHub Issue fetching
-- [x] Pull Request creation
-- [x] CI result fetching
-- [x] CI Fix Agent
-
-### v0.1 — Shipped
-- [x] CLI with run, review, version commands
+### Earlier Foundations
+- [x] Runtime Agent interface, standardized tools, lifecycle hooks, and retry/review loop
+- [x] Built-in agent registry, versioned Agent Definition schema, profiles, and Agent Factory
+- [x] Multi-agent orchestration with sequential and parallel execution
+- [x] Event bus, run persistence, audit-ready artifacts, and JSONL logs
+- [x] Local sandbox interface with Docker backend extension point
+- [x] Vector search, embeddings, memory, guidelines, and unified search
+- [x] GitHub issue, PR, CI checks, and CI-fix workflows
+- [x] MCP client and tool adapter integration
+- [x] Helm chart and Web UI foundation
 - [x] Task YAML loading
 - [x] Profile YAML loading
 - [x] LLM-based planning
