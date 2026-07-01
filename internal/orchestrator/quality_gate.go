@@ -39,6 +39,14 @@ const frontendProjectPresenceCommand = `sh -c 'test -f package.json || test -f i
 
 const frontendValidationCommand = `sh -c 'if [ -f package.json ]; then PM=npm; [ -f pnpm-lock.yaml ] && PM=pnpm; [ -f yarn.lock ] && PM=yarn; [ -f bun.lockb ] && PM=bun; for script in lint typecheck test build; do if node -e "const p=require(\"./package.json\"); process.exit(p.scripts&&p.scripts[process.argv[1]]?0:1)" "$script"; then case "$PM:$script" in yarn:*) yarn "$script";; pnpm:*) pnpm "$script";; bun:*) bun run "$script";; *) npm run "$script";; esac; fi; done; fi'`
 
+const dockerValidationCommand = `sh -c 'test -f Dockerfile && grep -Eiq "^FROM[[:space:]]" Dockerfile && if command -v docker >/dev/null 2>&1; then docker build -t agentos-validation .; fi'`
+
+const helmValidationCommand = `sh -c 'chart=$(find . -path "*/Chart.yaml" -not -path "./.git/*" -print -quit); test -n "$chart"; dir=$(dirname "$chart"); if command -v helm >/dev/null 2>&1; then helm lint "$dir" && helm template agentos-validation "$dir" >/dev/null; fi'`
+
+const kubernetesValidationCommand = `sh -c 'manifest=$(find . \( -name "*.yaml" -o -name "*.yml" \) -not -path "./.git/*" -exec grep -El "^(apiVersion|kind):" {} + | head -n1); test -n "$manifest"; if command -v kubectl >/dev/null 2>&1; then kubectl apply --dry-run=client -f "$manifest" >/dev/null; fi'`
+
+const opsValidationCommand = `sh -c 'test -f Dockerfile || find . \( -path "*/Chart.yaml" -o -name "*.yaml" -o -name "*.yml" \) -not -path "./.git/*" -print -quit | grep -q .'`
+
 // QualityGateStatus reports the result of validating a subtask's gate.
 type QualityGateStatus struct {
 	Passed bool                     `json:"passed"`
@@ -129,6 +137,27 @@ func qualityGateForSubtask(subtask *Subtask) *QualityGate {
 				File:     "docs/testing.md",
 				Contains: []string{"test"},
 			}},
+		}
+	case "docker":
+		return &QualityGate{
+			RequiredFiles:      []string{"Dockerfile"},
+			ValidationCommands: []string{dockerValidationCommand},
+			ContentChecks: []QualityContentCheck{{
+				File:     "Dockerfile",
+				Contains: []string{"FROM"},
+			}},
+		}
+	case "helm":
+		return &QualityGate{
+			ValidationCommands: []string{helmValidationCommand},
+		}
+	case "kubernetes":
+		return &QualityGate{
+			ValidationCommands: []string{kubernetesValidationCommand},
+		}
+	case "devops":
+		return &QualityGate{
+			ValidationCommands: []string{opsValidationCommand},
 		}
 	default:
 		return nil

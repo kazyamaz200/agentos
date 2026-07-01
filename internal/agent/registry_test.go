@@ -16,6 +16,10 @@ func TestDefaultRegistryIncludesExpandedBuiltIns(t *testing.T) {
 		"release-manager",
 		"dependency-updater",
 		"qa",
+		"docker",
+		"helm",
+		"kubernetes",
+		"devops",
 		"analyst",
 		"reporter",
 	} {
@@ -25,8 +29,8 @@ func TestDefaultRegistryIncludesExpandedBuiltIns(t *testing.T) {
 	}
 
 	infos := reg.List()
-	if len(infos) != 11 {
-		t.Fatalf("got %d built-in agents, want 11", len(infos))
+	if len(infos) != 15 {
+		t.Fatalf("got %d built-in agents, want 15", len(infos))
 	}
 	for i := range infos {
 		if infos[i].Description == "" {

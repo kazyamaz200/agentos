@@ -146,6 +146,27 @@ agents:
   updates.
 - `qa` for regression tests, smoke checks, scenario coverage, and manual
   verification notes.
+- `docker` for Dockerfile, image build, `.dockerignore`, compose, healthcheck,
+  and container security changes.
+- `helm` for chart templates, values, schema, `helm lint`, `helm template`, and
+  chart versioning changes.
+- `kubernetes` for raw manifests, ingress/service/deployment configuration,
+  probes, resources, securityContext, and rollout verification.
+- `devops` for broad deployment tasks that need coordination across Docker,
+  Helm, Kubernetes, security, QA, and release-readiness work.
+
+Recommended operations tasks:
+
+- Use `docker` for containerization, Dockerfile hardening, image build
+  troubleshooting, `.dockerignore`, compose migration, healthcheck, or
+  non-root runtime updates.
+- Use `helm` for chart template fixes, values defaults, values schema,
+  chart/app versioning, `helm lint`, and `helm template` validation.
+- Use `kubernetes` for raw manifests, deployment/service/ingress updates,
+  probes, resources, securityContext, namespace assumptions, and kubectl
+  dry-run or rollout checks.
+- Use `devops` for broad rollout or release-hardening tasks that span image,
+  chart, manifest, smoke test, and rollback concerns.
 
 Recommended frontend tasks:
 
@@ -170,9 +191,10 @@ architecture guidance, and output expectations. This helps LLM planning choose
 specialists instead of assigning subtasks from name-only descriptions. If LLM
 planning fails, the fallback planner still routes common tasks by domain:
 frontend work goes through the frontend application agent, QA, docs, and
-review; Docker, Helm, and Kubernetes work goes through release/deployment,
-security, QA, docs, and review; security, documentation, backend, dependency,
-CI, and release tasks have similar deterministic dependency templates.
+review; Docker, Helm, and Kubernetes work goes through the dedicated DevOps,
+Docker, Helm, Kubernetes, security, QA, docs, and review agents; security,
+documentation, backend, dependency, CI, and release tasks have similar
+deterministic dependency templates.
 
 ## Issue-Triggered Orchestration
 

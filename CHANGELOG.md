@@ -18,6 +18,8 @@
   release readiness, and stale memory/guideline checks.
 - Added scheduled orchestration outcome notifications with inbox history,
   webhook delivery retries, and optional GitHub Issue or PR comments.
+- Added built-in Docker, Helm, Kubernetes, and DevOps operations agents with
+  planner routing, validation gates, and deployment-safety expectations.
 
 ### Fixed
 - Fixed multi-arch Docker image builds by running the frontend build on the

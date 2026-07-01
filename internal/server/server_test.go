@@ -154,7 +154,7 @@ func TestServer_AgentsEndpoint_ReturnsList(t *testing.T) {
 	s := NewServer(0)
 	w := serveRequest(s, "GET", "/api/agents", nil)
 	assertStatus(t, w.Code, http.StatusOK)
-	assertArrayLen(t, w.Body.Bytes(), 11)
+	assertArrayLen(t, w.Body.Bytes(), 15)
 }
 
 func TestServer_AgentsEndpoint_GoBackendExists(t *testing.T) {
@@ -2049,9 +2049,10 @@ func TestRecommendOrchestration_RoutesFrontendAndOpsToSpecialists(t *testing.T) 
 		wantAgents []string
 	}{
 		{"frontend", "Update responsive UI", []string{"frontend"}, "frontend", []string{"frontend", "qa", "reviewer"}},
-		{"docker", "Update Dockerfile healthcheck", []string{"ops"}, "ops", []string{"release-manager", "security", "qa", "reviewer"}},
-		{"helm", "Fix Helm chart values", nil, "ops", []string{"release-manager", "security", "qa", "reviewer"}},
-		{"kubernetes", "Fix Kubernetes ingress deployment", nil, "ops", []string{"release-manager", "security", "qa", "reviewer"}},
+		{"docker", "Update Dockerfile healthcheck", []string{"ops"}, "ops", []string{"devops", "docker", "helm", "kubernetes", "release-manager", "security", "qa", "reviewer"}},
+		{"helm", "Fix Helm chart values", nil, "ops", []string{"devops", "docker", "helm", "kubernetes", "release-manager", "security", "qa", "reviewer"}},
+		{"kubernetes", "Fix Kubernetes ingress deployment", nil, "ops", []string{"devops", "docker", "helm", "kubernetes", "release-manager", "security", "qa", "reviewer"}},
+		{"ops-over-security-signal", "Fix Helm chart values and Kubernetes ingress deployment", []string{"security"}, "ops", []string{"devops", "docker", "helm", "kubernetes"}},
 		{"backend", "Add Go API handler", []string{"backend"}, "backend", []string{"go-backend", "reviewer"}},
 		{"docs", "Update README guide", []string{"docs"}, "docs", []string{"docs", "reviewer"}},
 		{"security", "Fix CodeQL security finding", []string{"security"}, "security", []string{"security", "reviewer"}},

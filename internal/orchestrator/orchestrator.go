@@ -388,10 +388,13 @@ func (o *Orchestrator) fallbackPlan(taskDesc string) *TaskPlan {
 	case hasAny("analyze", "investigate", "investigation", "root cause", "rca", "logs", "artifacts", "run history", "failure pattern", "trend", "report", "summary", "release readiness", "repository health", "incident"):
 		addNext("analyst", fmt.Sprintf("Investigate the requested repository or operations question. Inspect available run records, artifacts, logs, GitHub issues or PRs, checks, repository files, memory, and guidelines; cite provenance and distinguish observed facts from inferences. Parent task:\n\n%s", taskDesc), nil)
 		addNext("reporter", fmt.Sprintf("Create a structured Markdown report from the investigation findings. Include summary, scope, evidence, findings, root cause or likely causes, impact, recommendations, risks, and open questions; use requested language or templates when available. Parent task:\n\n%s", taskDesc), depsFor("analyst"))
-	case hasAny("docker", "helm", "kubernetes", "k8s", "ingress", "container", "cluster", "deployment", "chart"):
-		addNext("release-manager", fmt.Sprintf("Handle the deployment or ops-oriented change requested by the parent task. Inspect Dockerfile, compose files, Helm charts, Kubernetes manifests, ingress, deployment, values, and rollback conventions before editing. Parent task:\n\n%s", taskDesc), nil)
-		addNext("security", fmt.Sprintf("Review container, Helm, Kubernetes, secret, permission, and ingress security implications for the requested ops change. Add tests or manual verification notes where useful. Parent task:\n\n%s", taskDesc), depsFor("release-manager"))
-		addNext("qa", fmt.Sprintf("Add or document deployment smoke checks for the requested ops change, including concrete commands or cluster verification steps when automation is incomplete. Parent task:\n\n%s", taskDesc), depsFor("release-manager"))
+	case hasAny("docker", "helm", "kubernetes", "k8s", "ingress", "container", "cluster", "deployment", "chart", "manifest", "rollout"):
+		addNext("devops", fmt.Sprintf("Coordinate the deployment or ops-oriented change requested by the parent task. Inspect the full path from container image to Helm chart, Kubernetes manifests, rollout, and rollback before choosing the smallest safe change. Parent task:\n\n%s", taskDesc), nil)
+		addNext("docker", fmt.Sprintf("Handle Dockerfile, image build, .dockerignore, compose, and container runtime changes requested by the parent task. Preserve existing build conventions, avoid leaking secrets into layers, and validate with docker build when available or static Dockerfile checks otherwise. Parent task:\n\n%s", taskDesc), depsFor("devops"))
+		addNext("helm", fmt.Sprintf("Handle Helm chart, values, schema, template, and chart release changes requested by the parent task. Preserve chart layout and values compatibility, and validate with helm lint/template when available. Parent task:\n\n%s", taskDesc), depsFor("devops", "docker"))
+		addNext("kubernetes", fmt.Sprintf("Handle Kubernetes manifests, ingress, service, deployment, probes, resources, securityContext, and rollout verification requested by the parent task. Keep secrets out of manifests and validate YAML plus kubectl dry-run when available. Parent task:\n\n%s", taskDesc), depsFor("devops", "docker", "helm"))
+		addNext("security", fmt.Sprintf("Review container, Helm, Kubernetes, secret, permission, and ingress security implications for the requested ops change. Add tests or manual verification notes where useful. Parent task:\n\n%s", taskDesc), depsFor("docker", "helm", "kubernetes"))
+		addNext("qa", fmt.Sprintf("Add or document deployment smoke checks for the requested ops change, including concrete commands or cluster verification steps when automation is incomplete. Parent task:\n\n%s", taskDesc), depsFor("docker", "helm", "kubernetes"))
 	case hasAny("security", "vulnerability", "cve", "secret", "xss", "csrf", "sql injection", "permission", "authz", "codeql"):
 		addNext("security", fmt.Sprintf("Review and fix the security-sensitive work requested by the parent task. Inspect dependencies, auth/session handling, secrets, permissions, and security-relevant configuration before changing code. Parent task:\n\n%s", taskDesc), nil)
 		addNext("qa", fmt.Sprintf("Add focused regression or manual verification for the security-sensitive change. Parent task:\n\n%s", taskDesc), depsFor("security"))
@@ -418,7 +421,7 @@ func (o *Orchestrator) fallbackPlan(taskDesc string) *TaskPlan {
 	if !hasAny("docs", "documentation", "readme", "guide", "manual", "report", "summary") {
 		addNext("docs", fmt.Sprintf("Update relevant documentation for the requested changes when user-visible behavior, commands, deployment, or configuration changed. Parent task:\n\n%s", taskDesc), depsFor("go-backend", "release-manager"))
 	}
-	addNext("reviewer", fmt.Sprintf("Review the final diff for correctness, tests, security, maintainability, release readiness, routing fit, and convention preservation. Flag over-engineered or convention-breaking changes with severity and file references. Parent task:\n\n%s", taskDesc), depsFor("go-backend", "frontend", "docs", "ci-fixer", "security", "release-manager", "dependency-updater", "qa", "analyst", "reporter"))
+	addNext("reviewer", fmt.Sprintf("Review the final diff for correctness, tests, security, maintainability, release readiness, routing fit, and convention preservation. Flag over-engineered or convention-breaking changes with severity and file references. Parent task:\n\n%s", taskDesc), depsFor("go-backend", "frontend", "docs", "ci-fixer", "security", "release-manager", "dependency-updater", "qa", "analyst", "reporter", "devops", "docker", "helm", "kubernetes"))
 
 	if len(subtasks) == 0 {
 		for i := range o.agentDefs {
@@ -520,6 +523,54 @@ func builtInAgentInfo(name, fallbackDescription string) AgentMetadata {
 			"Summarize release readiness, known gaps, and deployment or rollback considerations.",
 		}
 		info.OutputExpectations = []string{"CHANGELOG.md or release documentation is updated when release notes are requested.", "Version and chart changes are consistent when release packaging is in scope.", "Release checklist items are concrete and traceable to validation commands or manual checks."}
+	case "docker":
+		info.Description = "Docker ops agent for Dockerfiles, image builds, .dockerignore, compose, and container safety"
+		info.Domains = []string{"docker", "containers", "images", "compose", "container-security"}
+		info.TriggerKeywords = []string{"docker", "dockerfile", "container", "image", "buildkit", "compose", ".dockerignore", "multi-stage", "healthcheck"}
+		info.TriggerFiles = []string{"Dockerfile", "Dockerfile.*", ".dockerignore", "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"}
+		info.RecommendedAfter = []string{"security", "dependency-updater"}
+		info.ArchitectureGuidance = []string{
+			"Inspect the existing Dockerfile, compose files, build context, entrypoint, exposed ports, and CI image-build flow before editing container files.",
+			"Prefer multi-stage builds, non-root runtime users, minimal copied context, deterministic package installation, and explicit health checks when the application supports them.",
+			"Keep secrets out of image layers, build args, labels, logs, and compose files.",
+		}
+		info.OutputExpectations = []string{"Container changes touch Dockerfile, .dockerignore, compose, or related build configuration instead of reporting no-op success.", "docker build is run when available; otherwise static Dockerfile checks and unavailable-tool notes are reported.", "Security and runtime notes cover user, ports, health checks, secret handling, image size, and rollback considerations."}
+	case "helm":
+		info.Description = "Helm ops agent for charts, templates, values, schema, chart linting, and release-safe packaging"
+		info.Domains = []string{"helm", "charts", "templates", "values", "kubernetes-packaging"}
+		info.TriggerKeywords = []string{"helm", "chart", "charts", "values.yaml", "values.schema.json", "template", "helm lint", "helm template", "appversion"}
+		info.TriggerFiles = []string{"charts/", "Chart.yaml", "values.yaml", "values.schema.json", "templates/", "Chart.lock"}
+		info.RecommendedAfter = []string{"docker", "kubernetes", "security"}
+		info.ArchitectureGuidance = []string{
+			"Inspect chart layout, helper templates, values defaults, schema, labels, annotations, and release versioning before changing templates.",
+			"Preserve existing values structure and helper conventions; avoid hard-coded environment-specific data in templates.",
+			"Prefer conservative Kubernetes defaults, schema-backed values, stable labels/selectors, and explicit upgrade or rollback notes for chart changes.",
+		}
+		info.OutputExpectations = []string{"Helm changes touch Chart.yaml, values, templates, schema, or chart tests instead of reporting no-op success.", "helm lint and helm template are run when available; otherwise structure checks and unavailable-tool notes are reported.", "Chart version, appVersion, values compatibility, and upgrade impact are summarized when packaging or release behavior changes."}
+	case "kubernetes":
+		info.Description = "Kubernetes ops agent for manifests, deployments, services, ingress, probes, resources, rollout checks, and safe defaults"
+		info.Domains = []string{"kubernetes", "k8s", "manifests", "deployments", "services", "ingress", "rollouts"}
+		info.TriggerKeywords = []string{"kubernetes", "k8s", "manifest", "deployment", "service", "ingress", "configmap", "secret", "probe", "resources", "rollout", "kubectl"}
+		info.TriggerFiles = []string{"k8s/", "kubernetes/", "manifests/", "deploy/", "deployment.yaml", "service.yaml", "ingress.yaml", "configmap.yaml", "secret.yaml"}
+		info.RecommendedAfter = []string{"docker", "helm", "security"}
+		info.ArchitectureGuidance = []string{
+			"Inspect existing manifest layout, namespace assumptions, labels/selectors, service ports, ingress, probes, resources, and rollout conventions before editing.",
+			"Prefer standard Kubernetes objects, conservative resource/security defaults, stable selectors, readiness/liveness probes, and non-privileged containers unless explicitly required.",
+			"Keep secrets out of manifests and logs; use Secret references, sealed/external secret systems, or documented runtime configuration instead.",
+		}
+		info.OutputExpectations = []string{"Kubernetes changes touch manifests, kustomize, Helm-rendered resources, or deployment docs instead of reporting no-op success.", "YAML parses successfully and kubectl dry-run is run when kubectl and context are available.", "Rollout, rollback, probe, resource, securityContext, and secret-handling verification notes are included for deployment changes."}
+	case "devops":
+		info.Description = "DevOps umbrella agent for Docker, Helm, Kubernetes, deployment debugging, and release hardening"
+		info.Domains = []string{"devops", "ops", "deployment", "docker", "helm", "kubernetes", "release-hardening"}
+		info.TriggerKeywords = []string{"devops", "ops", "deployment", "release hardening", "rollout", "rollback", "docker", "helm", "kubernetes", "k8s", "cluster"}
+		info.TriggerFiles = []string{"Dockerfile", "charts/", "k8s/", "kubernetes/", "deploy/", ".github/workflows/"}
+		info.RecommendedAfter = []string{"docker", "helm", "kubernetes", "security", "qa"}
+		info.ArchitectureGuidance = []string{
+			"Inspect the full delivery path from image build to chart/manifests and rollout before choosing the smallest safe operational change.",
+			"Coordinate specialist findings from Docker, Helm, Kubernetes, security, and QA work without duplicating low-level edits unnecessarily.",
+			"Prefer conservative release-hardening changes with explicit validation, rollback, and residual-risk notes.",
+		}
+		info.OutputExpectations = []string{"Ops work is decomposed into relevant Docker, Helm, Kubernetes, security, QA, and review steps when the task spans multiple layers.", "Validation results cite image build, chart render/lint, manifest dry-run, smoke checks, or the reason a tool was unavailable.", "Final notes include deployment impact, rollback path, manual verification, and follow-up risks."}
 	case "dependency-updater":
 		info.Description = "Dependency updater agent for Go modules, package locks, and GitHub Actions versions"
 		info.Domains = []string{"dependencies", "go-modules", "package-locks", "github-actions"}
@@ -931,6 +982,31 @@ func subtaskProfile(agentName string) profile.Profile {
 		prof.Tools.Allow = []string{"read_file", "write_file", "search", "shell", "git", "test"}
 		prof.Commands.Test = "go test ./..."
 		prof.Commands.Lint = ""
+	case "docker":
+		prof.Role = "Docker operations agent"
+		prof.Tools.Allow = []string{"read_file", "write_file", "search", "shell", "git", "test"}
+		prof.Commands.Test = dockerValidationCommand
+		prof.Commands.Lint = ""
+		prof.Limits.MaxRetries = 1
+	case "helm":
+		prof.Role = "Helm chart operations agent"
+		prof.Tools.Allow = []string{"read_file", "write_file", "search", "shell", "git", "test"}
+		prof.Commands.Test = helmValidationCommand
+		prof.Commands.Lint = ""
+		prof.Limits.MaxRetries = 1
+	case "kubernetes":
+		prof.Role = "Kubernetes operations agent"
+		prof.Tools.Allow = []string{"read_file", "write_file", "search", "shell", "git", "test"}
+		prof.Commands.Test = kubernetesValidationCommand
+		prof.Commands.Lint = ""
+		prof.Limits.MaxRetries = 1
+	case "devops":
+		prof.Role = "DevOps coordination agent"
+		prof.Tools.Allow = []string{"read_file", "write_file", "search", "shell", "git", "test"}
+		prof.Commands.Test = opsValidationCommand
+		prof.Commands.Lint = ""
+		prof.Limits.MaxRetries = 1
+		prof.Limits.MaxIterations = 4
 	}
 
 	return prof
