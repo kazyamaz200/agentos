@@ -33,7 +33,7 @@ helm install agentos agentos/agentos \
 - **Review & Retry** — Automated code review with retry on test/lint failure
 - **GitHub Automation** — Issue-triggered runs, PR creation, source issue comments, close policies, and approval gates
 - **GitHub App Tokens** — Installation-token support for repository write operations
-- **Specialized Built-In Agents** — Backend, frontend, CI, docs, security, release, dependency, QA, analyst, reporter, and review workflows
+- **Specialized Built-In Agents** — Backend, frontend, CI, docs, security, release, dependency, QA, Docker, Helm, Kubernetes, DevOps, analyst, reporter, and review workflows
 - **Repository Agents** — Load safe custom agent profiles from `.agentos/agents/*.yaml`
 - **Scenario Templates** — Apply built-in and repository `.agentos/scenarios/*.yaml` orchestration templates
 - **Vector Search** — Local (JSON) or Qdrant vector store for semantic search
@@ -263,7 +263,7 @@ publish a new immutable chart release.
 - [ ] Orchestration regression and scenario evaluation suite
 
 ### v1.3 — Scheduled Operations & Reporting
-- [ ] Built-in Docker, Helm, and Kubernetes operations agents
+- [x] Built-in Docker, Helm, and Kubernetes operations agents
 - [x] Analyst and reporter agents for investigation workflows
 - [x] Log and data sources for investigation agents
 - [x] Recurring orchestration jobs
@@ -292,7 +292,7 @@ publish a new immutable chart release.
 ### v1.0 — Foundation
 - [x] Runtime Agent interface (Plan, Execute, Review) with lifecycle hooks
 - [x] Standardized tool interface with Description, lifecycle, and validation
-- [x] Agent plugin registry with built-in agents (go-backend, frontend, reviewer, ci-fixer, docs, security, release-manager, dependency-updater, qa)
+- [x] Agent plugin registry with built-in agents (go-backend, frontend, reviewer, ci-fixer, docs, security, release-manager, dependency-updater, qa, docker, helm, kubernetes, devops, analyst, reporter)
 - [x] Structured event bus with typed events and file store persistence
 - [x] Pluggable memory layer (VectorStore, JSONStore)
 - [x] Sandbox interface (local backend; Docker backend stub)

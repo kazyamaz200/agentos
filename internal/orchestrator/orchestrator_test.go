@@ -108,7 +108,7 @@ func TestFallbackPlan_RoutesSpecializedDomains(t *testing.T) {
 	t.Parallel()
 
 	agents := map[string]runtime.Agent{}
-	for _, name := range []string{"go-backend", "frontend", "docs", "ci-fixer", "security", "release-manager", "dependency-updater", "qa", "analyst", "reporter", "reviewer"} {
+	for _, name := range []string{"go-backend", "frontend", "docs", "ci-fixer", "security", "release-manager", "dependency-updater", "qa", "docker", "helm", "kubernetes", "devops", "analyst", "reporter", "reviewer"} {
 		agents[name] = agentpkg.NewBaseAgent(name, llm.NewMockLLMClient(nil))
 	}
 	o := NewOrchestrator(
@@ -124,8 +124,8 @@ func TestFallbackPlan_RoutesSpecializedDomains(t *testing.T) {
 		wantAgents []string
 	}{
 		{"frontend", "Update React Tailwind responsive UI", []string{"frontend", "qa", "docs", "reviewer"}},
-		{"docker", "Fix Dockerfile container deployment", []string{"release-manager", "security", "qa", "docs", "reviewer"}},
-		{"helm", "Fix Helm chart values for Kubernetes ingress", []string{"release-manager", "security", "qa", "docs", "reviewer"}},
+		{"docker", "Fix Dockerfile container deployment", []string{"devops", "docker", "helm", "kubernetes", "security", "qa", "docs", "reviewer"}},
+		{"helm", "Fix Helm chart values for Kubernetes ingress", []string{"devops", "docker", "helm", "kubernetes", "security", "qa", "docs", "reviewer"}},
 		{"investigation report", "Investigate the last 24 hours of run logs and create a repository health report", []string{"analyst", "reporter", "reviewer"}},
 		{"backend", "Add Go API endpoint handler", []string{"go-backend", "docs", "ci-fixer", "reviewer"}},
 		{"docs", "Update README documentation guide", []string{"docs", "reviewer"}},
@@ -288,6 +288,10 @@ func TestApplyDefaultQualityGate_SpecializedBuiltIns(t *testing.T) {
 		{"release-manager", "CHANGELOG.md"},
 		{"dependency-updater", "go.mod"},
 		{"qa", "docs/testing.md"},
+		{"docker", "Dockerfile"},
+		{"helm", ""},
+		{"kubernetes", ""},
+		{"devops", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.agent, func(t *testing.T) {

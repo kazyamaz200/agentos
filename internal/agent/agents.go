@@ -257,6 +257,110 @@ func DefaultRegistry() *Registry {
 	})
 
 	r.MustRegister(&Info{
+		Name:          "docker",
+		Description:   "Docker ops agent — maintains Dockerfiles, image builds, .dockerignore, runtime config, and container safety defaults",
+		Version:       "1.0.0",
+		Author:        "AgentOS",
+		RequiredTools: []string{"read_file", "write_file", "search", "shell", "git", "test"},
+		Domains:       []string{"docker", "containers", "images", "compose", "container-security"},
+		TriggerKeywords: []string{
+			"docker", "dockerfile", "container", "image", "buildkit", "compose", ".dockerignore", "multi-stage", "healthcheck",
+		},
+		TriggerFiles:     []string{"Dockerfile", "Dockerfile.*", ".dockerignore", "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"},
+		RecommendedAfter: []string{"security", "dependency-updater"},
+		ArchitectureGuidance: []string{
+			"Inspect the existing Dockerfile, compose files, build context, entrypoint, exposed ports, and CI image-build flow before editing container files.",
+			"Prefer multi-stage builds, non-root runtime users, minimal copied context, deterministic package installation, and explicit health checks when the application supports them.",
+			"Keep secrets out of image layers, build args, labels, logs, and compose files; use runtime environment variables or orchestrator-managed secrets instead.",
+		},
+		OutputExpectations: []string{
+			"Container changes touch Dockerfile, .dockerignore, compose, or related build configuration instead of reporting no-op success.",
+			"`docker build` or the repository image-build command is run when Docker is available; otherwise static Dockerfile checks and the reason Docker was unavailable are reported.",
+			"Security and runtime notes cover user, ports, health checks, secret handling, image size, and rollback considerations when relevant.",
+		},
+	}, func(llmClient llm.LLMClient) runtime.Agent {
+		return NewBaseAgent("docker", llmClient)
+	})
+
+	r.MustRegister(&Info{
+		Name:          "helm",
+		Description:   "Helm ops agent — maintains charts, templates, values, schema, chart linting, and release-safe Helm packaging",
+		Version:       "1.0.0",
+		Author:        "AgentOS",
+		RequiredTools: []string{"read_file", "write_file", "search", "shell", "git", "test"},
+		Domains:       []string{"helm", "charts", "templates", "values", "kubernetes-packaging"},
+		TriggerKeywords: []string{
+			"helm", "chart", "charts", "values.yaml", "values.schema.json", "template", "helm lint", "helm template", "appversion",
+		},
+		TriggerFiles:     []string{"charts/", "Chart.yaml", "values.yaml", "values.schema.json", "templates/", "Chart.lock"},
+		RecommendedAfter: []string{"docker", "kubernetes", "security"},
+		ArchitectureGuidance: []string{
+			"Inspect chart layout, helper templates, values defaults, schema, labels, annotations, and release versioning before changing templates.",
+			"Preserve existing values structure and helper conventions; avoid hard-coded environment-specific data in templates.",
+			"Prefer conservative Kubernetes defaults, schema-backed values, stable labels/selectors, and explicit upgrade or rollback notes for chart changes.",
+		},
+		OutputExpectations: []string{
+			"Helm changes touch Chart.yaml, values, templates, schema, or chart tests instead of reporting no-op success.",
+			"`helm lint` and `helm template` are run when Helm is available; otherwise YAML/template structure checks and the missing-tool reason are reported.",
+			"Chart version, appVersion, values compatibility, and upgrade impact are summarized when packaging or release behavior changes.",
+		},
+	}, func(llmClient llm.LLMClient) runtime.Agent {
+		return NewBaseAgent("helm", llmClient)
+	})
+
+	r.MustRegister(&Info{
+		Name:          "kubernetes",
+		Description:   "Kubernetes ops agent — maintains manifests, deployments, services, ingress, probes, resources, rollout checks, and cluster-safe defaults",
+		Version:       "1.0.0",
+		Author:        "AgentOS",
+		RequiredTools: []string{"read_file", "write_file", "search", "shell", "git", "test"},
+		Domains:       []string{"kubernetes", "k8s", "manifests", "deployments", "services", "ingress", "rollouts"},
+		TriggerKeywords: []string{
+			"kubernetes", "k8s", "manifest", "deployment", "service", "ingress", "configmap", "secret", "probe", "resources", "rollout", "kubectl",
+		},
+		TriggerFiles:     []string{"k8s/", "kubernetes/", "manifests/", "deploy/", "deployment.yaml", "service.yaml", "ingress.yaml", "configmap.yaml", "secret.yaml"},
+		RecommendedAfter: []string{"docker", "helm", "security"},
+		ArchitectureGuidance: []string{
+			"Inspect existing manifest layout, namespace assumptions, labels/selectors, service ports, ingress, probes, resources, and rollout conventions before editing.",
+			"Prefer standard Kubernetes objects, conservative resource/security defaults, stable selectors, readiness/liveness probes, and non-privileged containers unless explicitly required.",
+			"Keep secrets out of manifests and logs; use Secret references, sealed/external secret systems, or documented runtime configuration instead.",
+		},
+		OutputExpectations: []string{
+			"Kubernetes changes touch manifests, kustomize, Helm-rendered resources, or deployment docs instead of reporting no-op success.",
+			"YAML parses successfully and `kubectl apply --dry-run=client` or server-side dry-run is run when kubectl and context are available.",
+			"Rollout, rollback, probe, resource, securityContext, and secret-handling verification notes are included for deployment changes.",
+		},
+	}, func(llmClient llm.LLMClient) runtime.Agent {
+		return NewBaseAgent("kubernetes", llmClient)
+	})
+
+	r.MustRegister(&Info{
+		Name:          "devops",
+		Description:   "DevOps umbrella agent — coordinates Docker, Helm, Kubernetes, deployment debugging, and release hardening tasks",
+		Version:       "1.0.0",
+		Author:        "AgentOS",
+		RequiredTools: []string{"read_file", "write_file", "search", "shell", "git", "test"},
+		Domains:       []string{"devops", "ops", "deployment", "docker", "helm", "kubernetes", "release-hardening"},
+		TriggerKeywords: []string{
+			"devops", "ops", "deployment", "release hardening", "rollout", "rollback", "docker", "helm", "kubernetes", "k8s", "cluster",
+		},
+		TriggerFiles:     []string{"Dockerfile", "charts/", "k8s/", "kubernetes/", "deploy/", ".github/workflows/"},
+		RecommendedAfter: []string{"docker", "helm", "kubernetes", "security", "qa"},
+		ArchitectureGuidance: []string{
+			"Inspect the full delivery path from image build to chart/manifests and rollout before choosing the smallest safe operational change.",
+			"Coordinate specialist findings from Docker, Helm, Kubernetes, security, and QA work without duplicating low-level edits unnecessarily.",
+			"Prefer conservative release-hardening changes with explicit validation, rollback, and residual-risk notes.",
+		},
+		OutputExpectations: []string{
+			"Ops work is decomposed into the relevant Docker, Helm, Kubernetes, security, QA, and review steps when the task spans multiple layers.",
+			"Validation results cite image build, chart render/lint, manifest dry-run, smoke checks, or the reason a tool was unavailable.",
+			"Final notes include deployment impact, rollback path, manual verification, and follow-up risks.",
+		},
+	}, func(llmClient llm.LLMClient) runtime.Agent {
+		return NewBaseAgent("devops", llmClient)
+	})
+
+	r.MustRegister(&Info{
 		Name:          "analyst",
 		Description:   "Analyst agent — investigates logs, runs, artifacts, GitHub context, and repository evidence to identify findings and next actions",
 		Version:       "1.0.0",

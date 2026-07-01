@@ -2928,8 +2928,12 @@ func recommendRepoSignals(repo, baseBranch string) []string {
 }
 
 func recommendOrchestration(task string, repoSignals []string, registry *agent.Registry) orchestrationRecommendation {
-	text := strings.ToLower(task + " " + strings.Join(repoSignals, " "))
-	preset, confidence, rationale := classifyOrchestrationTask(text)
+	taskText := strings.ToLower(task)
+	preset, confidence, rationale := classifyOrchestrationTask(taskText)
+	if preset == "general" {
+		text := strings.ToLower(task + " " + strings.Join(repoSignals, " "))
+		preset, confidence, rationale = classifyOrchestrationTask(text)
+	}
 	rec := orchestrationRecommendation{
 		Preset:            preset,
 		Confidence:        confidence,

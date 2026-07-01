@@ -57,6 +57,9 @@ guidance:
 - `profiles/release_manager.yaml` — Release preparation agent
 - `profiles/dependency_updater.yaml` — Dependency update agent
 - `profiles/qa.yaml` — QA and verification agent
+- Built-in `docker`, `helm`, `kubernetes`, and `devops` agents — operations
+  specialists for image builds, charts, manifests, rollout checks, and
+  deployment hardening
 
 Built-in profiles include convention-aware guidance. Agents should inspect the
 target repository first, preserve clear local structure, and only introduce new
