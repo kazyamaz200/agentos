@@ -789,47 +789,47 @@ func runKubernetesRolloutScenario(ctx context.Context, result *ScenarioResult) *
 	keepRelease := strings.EqualFold(strings.TrimSpace(os.Getenv("AGENTOS_EVAL_KUBE_KEEP_RELEASE")), "true")
 	defer func() {
 		if !keepRelease {
-			_ = runHelm(ctx, cfg, "uninstall", cfg.Release, "--wait", "--timeout", "2m")
+			_ = runHelm(ctx, &cfg, "uninstall", cfg.Release, "--wait", "--timeout", "2m")
 		}
 	}()
 
-	if err := runHelm(ctx, cfg, "upgrade", "--install", cfg.Release, chartDir, "--set-string", "image="+cfg.BaseImage, "--wait", "--timeout", "2m"); err != nil {
+	if err := runHelm(ctx, &cfg, "upgrade", "--install", cfg.Release, chartDir, "--set-string", "image="+cfg.BaseImage, "--wait", "--timeout", "2m"); err != nil {
 		result.FailureReasons = append(result.FailureReasons, "helm baseline install: "+err.Error())
-		addKubernetesEventArtifacts(ctx, cfg, result)
+		addKubernetesEventArtifacts(ctx, &cfg, result)
 		return result
 	}
 	result.Checks = append(result.Checks, ScenarioCheck{Page: "kubernetes", Action: "helm baseline install", Passed: true})
-	baseStatus, err := getHelmStatus(ctx, cfg)
+	baseStatus, err := getHelmStatus(ctx, &cfg)
 	if err != nil {
 		result.FailureReasons = append(result.FailureReasons, "helm baseline status: "+err.Error())
-		addKubernetesEventArtifacts(ctx, cfg, result)
+		addKubernetesEventArtifacts(ctx, &cfg, result)
 		return result
 	}
 
 	rolloutStarted := time.Now()
-	if err := runHelm(ctx, cfg, "upgrade", cfg.Release, chartDir, "--set-string", "image="+cfg.TargetImage, "--wait", "--timeout", "2m"); err != nil {
+	if err := runHelm(ctx, &cfg, "upgrade", cfg.Release, chartDir, "--set-string", "image="+cfg.TargetImage, "--wait", "--timeout", "2m"); err != nil {
 		result.FailureReasons = append(result.FailureReasons, "helm upgrade: "+err.Error())
-		addKubernetesEventArtifacts(ctx, cfg, result)
+		addKubernetesEventArtifacts(ctx, &cfg, result)
 		return result
 	}
 	result.Checks = append(result.Checks, ScenarioCheck{Page: "kubernetes", Action: "helm upgrade", Passed: true})
-	if err := runKubectl(ctx, cfg, "rollout", "status", "deployment/"+deployment, "--timeout=120s"); err != nil {
+	if err := runKubectl(ctx, &cfg, "rollout", "status", "deployment/"+deployment, "--timeout=120s"); err != nil {
 		result.FailureReasons = append(result.FailureReasons, "rollout status: "+err.Error())
-		addKubernetesEventArtifacts(ctx, cfg, result)
+		addKubernetesEventArtifacts(ctx, &cfg, result)
 		return result
 	}
 	rolloutDuration := time.Since(rolloutStarted)
 	result.Checks = append(result.Checks, ScenarioCheck{Page: "kubernetes", Action: "rollout status", Passed: true, DurationMS: rolloutDuration.Milliseconds()})
-	if err := runKubectl(ctx, cfg, "wait", "--for=condition=Available", "deployment/"+deployment, "--timeout=120s"); err != nil {
+	if err := runKubectl(ctx, &cfg, "wait", "--for=condition=Available", "deployment/"+deployment, "--timeout=120s"); err != nil {
 		result.FailureReasons = append(result.FailureReasons, "readiness: "+err.Error())
-		addKubernetesEventArtifacts(ctx, cfg, result)
+		addKubernetesEventArtifacts(ctx, &cfg, result)
 		return result
 	}
 	result.Checks = append(result.Checks, ScenarioCheck{Page: "kubernetes", Action: "readiness", Passed: true})
-	deployedImage, err := kubectlOutput(ctx, cfg, "get", "deployment", deployment, "-o", "jsonpath={.spec.template.spec.containers[0].image}")
+	deployedImage, err := kubectlOutput(ctx, &cfg, "get", "deployment", deployment, "-o", "jsonpath={.spec.template.spec.containers[0].image}")
 	if err != nil {
 		result.FailureReasons = append(result.FailureReasons, "observe deployed image: "+err.Error())
-		addKubernetesEventArtifacts(ctx, cfg, result)
+		addKubernetesEventArtifacts(ctx, &cfg, result)
 		return result
 	}
 	deployedImage = strings.TrimSpace(deployedImage)
@@ -838,28 +838,28 @@ func runKubernetesRolloutScenario(ctx context.Context, result *ScenarioResult) *
 	if !imageOK {
 		result.FailureReasons = append(result.FailureReasons, fmt.Sprintf("deployed image = %q, want %q", deployedImage, cfg.TargetImage))
 	}
-	upgradedStatus, err := getHelmStatus(ctx, cfg)
+	upgradedStatus, err := getHelmStatus(ctx, &cfg)
 	if err != nil {
 		result.FailureReasons = append(result.FailureReasons, "helm upgraded status: "+err.Error())
-		addKubernetesEventArtifacts(ctx, cfg, result)
+		addKubernetesEventArtifacts(ctx, &cfg, result)
 		return result
 	}
 
-	if err := runHelm(ctx, cfg, "rollback", cfg.Release, fmt.Sprintf("%d", baseStatus.Version), "--wait", "--timeout", "2m"); err != nil {
+	if err := runHelm(ctx, &cfg, "rollback", cfg.Release, fmt.Sprintf("%d", baseStatus.Version), "--wait", "--timeout", "2m"); err != nil {
 		result.FailureReasons = append(result.FailureReasons, "helm rollback: "+err.Error())
-		addKubernetesEventArtifacts(ctx, cfg, result)
+		addKubernetesEventArtifacts(ctx, &cfg, result)
 		return result
 	}
 	result.Checks = append(result.Checks, ScenarioCheck{Page: "kubernetes", Action: "helm rollback", Passed: true})
-	if err := runKubectl(ctx, cfg, "rollout", "status", "deployment/"+deployment, "--timeout=120s"); err != nil {
+	if err := runKubectl(ctx, &cfg, "rollout", "status", "deployment/"+deployment, "--timeout=120s"); err != nil {
 		result.FailureReasons = append(result.FailureReasons, "rollback rollout status: "+err.Error())
-		addKubernetesEventArtifacts(ctx, cfg, result)
+		addKubernetesEventArtifacts(ctx, &cfg, result)
 		return result
 	}
-	rollbackImage, err := kubectlOutput(ctx, cfg, "get", "deployment", deployment, "-o", "jsonpath={.spec.template.spec.containers[0].image}")
+	rollbackImage, err := kubectlOutput(ctx, &cfg, "get", "deployment", deployment, "-o", "jsonpath={.spec.template.spec.containers[0].image}")
 	if err != nil {
 		result.FailureReasons = append(result.FailureReasons, "observe rollback image: "+err.Error())
-		addKubernetesEventArtifacts(ctx, cfg, result)
+		addKubernetesEventArtifacts(ctx, &cfg, result)
 		return result
 	}
 	rollbackImage = strings.TrimSpace(rollbackImage)
@@ -869,7 +869,7 @@ func runKubernetesRolloutScenario(ctx context.Context, result *ScenarioResult) *
 		result.FailureReasons = append(result.FailureReasons, fmt.Sprintf("rollback image = %q, want %q", rollbackImage, cfg.BaseImage))
 	}
 
-	events := kubernetesEventSnippet(ctx, cfg)
+	events := kubernetesEventSnippet(ctx, &cfg)
 	result.Artifacts = map[string]string{
 		"kubeContext":       cfg.Context,
 		"namespace":         cfg.Namespace,
@@ -983,12 +983,12 @@ spec:
 	return chartDir, nil
 }
 
-func runHelm(ctx context.Context, cfg kubernetesRolloutConfig, args ...string) error {
+func runHelm(ctx context.Context, cfg *kubernetesRolloutConfig, args ...string) error {
 	_, err := commandOutput(ctx, "", "helm", append(helmBaseArgs(cfg), args...)...)
 	return err
 }
 
-func getHelmStatus(ctx context.Context, cfg kubernetesRolloutConfig) (*helmStatusResult, error) {
+func getHelmStatus(ctx context.Context, cfg *kubernetesRolloutConfig) (*helmStatusResult, error) {
 	out, err := commandOutput(ctx, "", "helm", append(helmBaseArgs(cfg), "status", cfg.Release, "--output", "json")...)
 	if err != nil {
 		return nil, err
@@ -1000,17 +1000,17 @@ func getHelmStatus(ctx context.Context, cfg kubernetesRolloutConfig) (*helmStatu
 	return &status, nil
 }
 
-func helmBaseArgs(cfg kubernetesRolloutConfig) []string {
+func helmBaseArgs(cfg *kubernetesRolloutConfig) []string {
 	args := []string{"--kubeconfig", cfg.Kubeconfig, "--kube-context", cfg.Context, "--namespace", cfg.Namespace}
 	return args
 }
 
-func runKubectl(ctx context.Context, cfg kubernetesRolloutConfig, args ...string) error {
+func runKubectl(ctx context.Context, cfg *kubernetesRolloutConfig, args ...string) error {
 	_, err := kubectlOutput(ctx, cfg, args...)
 	return err
 }
 
-func kubectlOutput(ctx context.Context, cfg kubernetesRolloutConfig, args ...string) (string, error) {
+func kubectlOutput(ctx context.Context, cfg *kubernetesRolloutConfig, args ...string) (string, error) {
 	base := []string{"--kubeconfig", cfg.Kubeconfig, "--context", cfg.Context, "-n", cfg.Namespace}
 	return commandOutput(ctx, "", "kubectl", append(base, args...)...)
 }
@@ -1032,7 +1032,7 @@ func commandOutput(ctx context.Context, dir, name string, args ...string) (strin
 	return sanitizeKubernetesOutput(stdout.String()), nil
 }
 
-func addKubernetesEventArtifacts(ctx context.Context, cfg kubernetesRolloutConfig, result *ScenarioResult) {
+func addKubernetesEventArtifacts(ctx context.Context, cfg *kubernetesRolloutConfig, result *ScenarioResult) {
 	if result.Artifacts == nil {
 		result.Artifacts = map[string]string{}
 	}
@@ -1042,7 +1042,7 @@ func addKubernetesEventArtifacts(ctx context.Context, cfg kubernetesRolloutConfi
 	result.Artifacts["events"] = kubernetesEventSnippet(ctx, cfg)
 }
 
-func kubernetesEventSnippet(ctx context.Context, cfg kubernetesRolloutConfig) string {
+func kubernetesEventSnippet(ctx context.Context, cfg *kubernetesRolloutConfig) string {
 	out, err := kubectlOutput(ctx, cfg, "get", "events", "--sort-by=.lastTimestamp", "-o", "custom-columns=LAST:.lastTimestamp,TYPE:.type,REASON:.reason,KIND:.involvedObject.kind,NAME:.involvedObject.name,MESSAGE:.message")
 	if err != nil {
 		return err.Error()
